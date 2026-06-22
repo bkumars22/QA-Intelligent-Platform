@@ -23,6 +23,7 @@ import {
 import { StatusBadge } from '../components/StatusBadge';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { McpStatusDot } from '../components/McpStatusDot';
+import { AutomationTab } from '../components/AutomationTab';
 import type {
   TestRun,
   Defect,
@@ -33,13 +34,14 @@ import type {
   McpServerType,
 } from '../types';
 
-type Tab = 'overview' | 'test-runs' | 'defects' | 'coverage-gaps' | 'mcp-status';
+type Tab = 'overview' | 'test-runs' | 'defects' | 'coverage-gaps' | 'mcp-status' | 'automation';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'test-runs', label: 'Test Runs' },
   { id: 'defects', label: 'Defects' },
   { id: 'coverage-gaps', label: 'Coverage Gaps' },
+  { id: 'automation', label: '⚡ Automation' },
   { id: 'mcp-status', label: 'MCP Status' },
 ];
 
@@ -336,6 +338,11 @@ export function ProjectDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Tab: Automation */}
+      {activeTab === 'automation' && (
+        <AutomationTab projectId={projectId} />
       )}
 
       {/* Tab: MCP Status */}
