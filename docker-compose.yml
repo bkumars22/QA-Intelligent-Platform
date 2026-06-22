@@ -5,9 +5,9 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-testmind}
-      POSTGRES_USER: ${POSTGRES_USER:-testmind}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?DB password required}
+      POSTGRES_DB: ${POSTGRES_DB:-qaip}
+      POSTGRES_USER: ${POSTGRES_USER:-qaip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qaip_local_2026}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -33,10 +33,10 @@ services:
       redis:
         condition: service_started
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-testmind}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-testmind}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET:?JWT secret required}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-qaip}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-qaip}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-qaip_local_2026}
+      JWT_SECRET: ${JWT_SECRET:-fallback_dev_secret_change_in_prod_64chars_minimum_length_ok}
       AI_ENGINE_URL: http://ai-engine:8001
       REDIS_HOST: redis
     ports:
@@ -57,14 +57,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      GROQ_API_KEY: ${GROQ_API_KEY:?Groq API key required}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       JIRA_URL: ${JIRA_URL:-}
       JIRA_EMAIL: ${JIRA_EMAIL:-}
       JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_TEAM_ID: ${SLACK_TEAM_ID:-}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-testmind}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-testmind}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-qaip}:${POSTGRES_PASSWORD:-qaip_local_2026}@postgres:5432/${POSTGRES_DB:-qaip}
     ports:
       - "8001:8001"
     healthcheck:
