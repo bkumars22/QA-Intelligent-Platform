@@ -1,5 +1,5 @@
 """
-TestMind AI Engine — FastAPI application entry point.
+QA Intelligent Platform (AI-Driven) — AI Engine FastAPI entry point.
 
 Endpoints:
   POST /analyze          — trigger full 7-node LangGraph agent

@@ -33,12 +33,12 @@ export function LoginPage() {
           <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-brand-600">
             <Brain size={22} className="text-white" />
           </div>
-          <span className="text-white font-bold text-xl">TestMind</span>
+          <span className="text-white font-bold text-xl">QA Intelligent Platform</span>
         </div>
 
         <div>
           <h1 className="text-4xl font-bold text-white leading-tight">
-            AI-Native QA Intelligence
+            QA Intelligent Platform (AI-Driven)
           </h1>
           <p className="mt-4 text-slate-400 text-lg leading-relaxed">
             Automated test generation, defect detection, and risk analysis
@@ -63,7 +63,7 @@ export function LoginPage() {
           </div>
         </div>
 
-        <p className="text-slate-500 text-sm">© 2026 TestMind. All rights reserved.</p>
+        <p className="text-slate-500 text-sm">© 2026 QA Intelligent Platform. All rights reserved.</p>
       </div>
 
       {/* Right — login form */}
@@ -74,7 +74,7 @@ export function LoginPage() {
             <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-brand-600">
               <Brain size={20} className="text-white" />
             </div>
-            <span className="font-bold text-xl text-gray-900">TestMind</span>
+            <span className="font-bold text-xl text-gray-900">QA Intelligent Platform</span>
           </div>
 
           <h2 className="text-2xl font-bold text-gray-900">Sign in to your account</h2>

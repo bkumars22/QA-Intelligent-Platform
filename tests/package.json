@@ -1,5 +1,5 @@
 {
-  "name": "testmind-tests",
+  "name": "qa-intelligent-platform-tests",
   "version": "1.0.0",
   "scripts": {
     "test": "playwright test",

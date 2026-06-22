@@ -1,4 +1,4 @@
-name: TestMind CI/CD
+name: QA Intelligent Platform CI/CD
 
 on:
   push:

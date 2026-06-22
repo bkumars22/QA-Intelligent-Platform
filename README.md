@@ -1,4 +1,4 @@
-# 🧠 TestMind — AI-Native QA Intelligence Platform
+# QA Intelligent Platform (AI-Driven)
 
 > **Plug in your GitHub repo. Get risk scores, AI-generated tests, and defect explanations — in one command.**
 
@@ -8,6 +8,8 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)](https://python.org)
 [![React 18](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react)](https://react.dev)
 [![Groq](https://img.shields.io/badge/AI-Groq%20Llama--3.3--70b-f97316?style=flat-square)](https://console.groq.com)
+
+**GitHub:** [github.com/bkumars22/TestMind](https://github.com/bkumars22/TestMind) · **Built by:** B KumaraSwamy
 
 ---
 
@@ -26,9 +28,9 @@ Pre-loaded with 2 real projects (SCIP + ARIA), 4 defects, 6 risk scores, and ful
 
 ---
 
-## What is TestMind?
+## What is QA Intelligent Platform?
 
-TestMind is an AI-native QA layer you can plug into any live project without rewriting your stack.
+QA Intelligent Platform (AI-Driven) is an AI-native QA layer you can plug into any live project without rewriting your stack.
 
 It connects to your GitHub repo, reads changed files from every commit, scores risk using **IsolationForest ML**, generates missing Playwright tests, explains defects in plain language, and posts results to Jira and Slack — **fully autonomous**.
 
@@ -51,7 +53,7 @@ It connects to your GitHub repo, reads changed files from every commit, scores r
 git clone https://github.com/bkumars22/TestMind.git
 cd TestMind
 cp .env.example .env
-# Edit .env — minimum required: GROQ_API_KEY + GITHUB_TOKEN + POSTGRES_PASSWORD + JWT_SECRET
+# Edit .env — minimum: GROQ_API_KEY + GITHUB_TOKEN + POSTGRES_PASSWORD + JWT_SECRET
 docker compose up --build
 ```
 
@@ -65,7 +67,7 @@ Login: `admin@testmind.io` / `Admin@2026`
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                      TestMind                            │
+│           QA Intelligent Platform (AI-Driven)            │
 ├──────────────┬─────────────────────┬─────────────────────┤
 │  Frontend    │  Backend            │  AI Engine          │
 │  React 18    │  Spring Boot 3.2    │  FastAPI + Python   │
@@ -102,7 +104,7 @@ fetch_codebase → score_risk → identify_gaps → generate_tests
 
 ## Real-World Integration — SCIP and ARIA
 
-TestMind is actively running against two production projects. This section documents exactly how to connect it to your own live codebase.
+QA Intelligent Platform (AI-Driven) is actively running against two production projects. This section documents exactly how to connect it to your own live codebase.
 
 ### Why this matters
 
@@ -457,7 +459,7 @@ TestMind/
 
 swamy.kumar02@gmail.com
 
-*"89% of teams experiment with AI in QA. Only 15% reach enterprise scale. TestMind closes that gap."*
+*"89% of teams experiment with AI in QA. Only 15% reach enterprise scale. QA Intelligent Platform closes that gap."*
 
 ---
 

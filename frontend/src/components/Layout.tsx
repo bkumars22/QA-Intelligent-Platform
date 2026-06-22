@@ -39,8 +39,8 @@ export function Layout() {
             <Brain size={20} className="text-white" />
           </div>
           <div>
-            <p className="font-bold text-base leading-tight">TestMind</p>
-            <p className="text-xs text-slate-400 leading-tight">AI QA Intelligence</p>
+            <p className="font-bold text-base leading-tight">QA Intelligent</p>
+            <p className="text-xs text-slate-400 leading-tight">AI-Driven Platform</p>
           </div>
         </div>
 

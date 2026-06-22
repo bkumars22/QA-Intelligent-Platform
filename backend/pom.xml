@@ -12,10 +12,10 @@
   </parent>
 
   <groupId>com.testmind</groupId>
-  <artifactId>testmind-backend</artifactId>
+  <artifactId>qa-intelligent-platform-backend</artifactId>
   <version>1.0.0</version>
-  <name>TestMind Backend</name>
-  <description>AI-Native QA Intelligence Platform — Spring Boot API</description>
+  <name>QA Intelligent Platform Backend</name>
+  <description>QA Intelligent Platform (AI-Driven) — Spring Boot API</description>
 
   <properties>
     <java.version>17</java.version>
