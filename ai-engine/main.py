@@ -32,7 +32,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
-logger = logging.getLogger("testmind.main")
+logger = logging.getLogger("qaip.main")
 
 # ---------------------------------------------------------------------------
 # Rate-limiting state (in-memory, per IP)
@@ -63,9 +63,9 @@ run_store: dict[str, dict[str, Any]] = {}
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="TestMind AI Engine",
+    title="QA Intelligent Platform — AI Engine",
     description="LangGraph-powered QA intelligence service",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -98,7 +98,7 @@ async def rate_limit_middleware(request: Request, call_next):
 # Request / Response models
 # ---------------------------------------------------------------------------
 class AnalyzeRequest(BaseModel):
-    project_id: int = Field(..., description="TestMind project ID")
+    project_id: int = Field(..., description="QA Intelligent Platform project ID")
     repo_url: str = Field(..., description="Full GitHub repository URL")
     github_token: str = Field(..., description="GitHub personal access token")
     commit_sha: str = Field(..., description="Commit SHA to analyse")

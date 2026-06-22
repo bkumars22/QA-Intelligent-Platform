@@ -14,8 +14,30 @@ interface UseAuthReturn {
   logout: () => void;
 }
 
-// Module-level state so auth persists across hook consumers without localStorage
-let _authState: AuthState = { user: null, isAuthenticated: false };
+const STORAGE_KEY = 'qaip_auth';
+
+function loadFromStorage(): AuthState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { user: null, isAuthenticated: false };
+    const parsed = JSON.parse(raw) as { token: string; user: User };
+    setToken(parsed.token);
+    return { user: parsed.user, isAuthenticated: true };
+  } catch {
+    return { user: null, isAuthenticated: false };
+  }
+}
+
+function saveToStorage(token: string, user: User): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, user }));
+}
+
+function clearStorage(): void {
+  localStorage.removeItem(STORAGE_KEY);
+}
+
+// Restore session on module load — survives page refresh and direct URL navigation
+let _authState: AuthState = loadFromStorage();
 const _listeners = new Set<() => void>();
 
 function notifyListeners(): void {
@@ -25,7 +47,6 @@ function notifyListeners(): void {
 export function useAuth(): UseAuthReturn {
   const [, rerender] = useState(0);
 
-  // Subscribe to global auth state changes
   useEffect(() => {
     const fn = () => rerender((n) => n + 1);
     _listeners.add(fn);
@@ -42,12 +63,14 @@ export function useAuth(): UseAuthReturn {
       email: response.email,
       role: response.role as UserRole,
     };
+    saveToStorage(response.accessToken, user);
     _authState = { user, isAuthenticated: true };
     notifyListeners();
   }, []);
 
   const logout = useCallback((): void => {
     clearToken();
+    clearStorage();
     _authState = { user: null, isAuthenticated: false };
     notifyListeners();
   }, []);
