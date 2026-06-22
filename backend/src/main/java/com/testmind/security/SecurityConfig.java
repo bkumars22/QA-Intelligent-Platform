@@ -41,6 +41,7 @@ public class SecurityConfig {
                     "/api/health",
                     "/api/pipeline/callback",
                     "/api/automation/reports/**",
+                    "/api/webhook/github",
                     "/swagger-ui.html",
                     "/swagger-ui/**",
                     "/api-docs/**",

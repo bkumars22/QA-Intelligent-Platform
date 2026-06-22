@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { UnifiedDashboardPage } from './pages/UnifiedDashboardPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { DefectDetailPage } from './pages/DefectDetailPage';
@@ -39,7 +40,8 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<UnifiedDashboardPage />} />
+        <Route path="/dashboard/legacy" element={<DashboardPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/defects/:id" element={<DefectDetailPage />} />
