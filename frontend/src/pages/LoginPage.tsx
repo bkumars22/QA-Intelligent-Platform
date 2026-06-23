@@ -16,10 +16,28 @@ export function LoginPage() {
     navigate('/dashboard');
   };
 
+  const DEMO_CREDENTIALS = [
+    { email: 'admin', password: 'admin' },
+    { email: 'admin@qaip.io', password: 'admin' },
+    { email: 'admin@qaip.io', password: 'Admin@2026' },
+    { email: 'admin@testmind.io', password: 'Admin@2026' },
+  ];
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    // Allow known credentials to work locally without backend
+    const isDemo = DEMO_CREDENTIALS.some(
+      (c) => c.email === email.trim() && c.password === password
+    );
+    if (isDemo) {
+      demoLogin();
+      navigate('/dashboard');
+      return;
+    }
+
     try {
       await login(email, password);
       navigate('/dashboard');
@@ -28,7 +46,7 @@ export function LoginPage() {
         err instanceof TypeError ||
         (err instanceof Error && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed')));
       if (isNetworkError) {
-        setError('Backend is not reachable. Use "Enter as Demo Admin" above to access the dashboard, or deploy the backend and try again.');
+        setError('Backend not connected. Try: admin / admin to access the dashboard.');
       } else {
         setError('Invalid email or password. Please try again.');
       }
@@ -90,7 +108,7 @@ export function LoginPage() {
           </div>
 
           <h2 className="text-2xl font-bold text-gray-900">Sign in to your account</h2>
-          <p className="mt-1 text-sm text-gray-500">Enter your credentials to access the dashboard</p>
+          <p className="mt-1 text-sm text-gray-500">Use <strong>admin</strong> / <strong>admin</strong> to sign in</p>
 
           {/* Demo access — no backend required */}
           <div className="mt-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
@@ -131,7 +149,7 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm text-gray-900 bg-white transition"
-                placeholder="admin@qaip.io or admin"
+                placeholder="admin"
               />
             </div>
 
