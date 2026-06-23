@@ -25,10 +25,10 @@ Built by: B KumaraSwamy — Bangalore, India
 
 ### Login Credentials
 
-| Field | Value |
-|-------|-------|
-| Email | admin@qaip.io |
-| Password | Admin@2026 |
+| Email | Password | Notes |
+|-------|----------|-------|
+| admin@qaip.io | Admin@2026 | Works after latest Railway deploy (V20 migration) |
+| admin@testmind.io | Admin@2026 | Works on current live Railway instance |
 
 Pre-loaded with SCIP and ARIA as registered projects, 4 defects, 6 risk scores, and full analysis history.
 
