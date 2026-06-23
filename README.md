@@ -291,6 +291,244 @@ Register the webhook on each repo:
 
 ---
 
+## MCP Server Integration
+
+QAIP uses five MCP (Model Context Protocol) servers in its pipeline. Each server gives the AI agent a specific capability during the 7-stage QA pipeline. Connection configs are stored in `mcp-servers/` in the repo root.
+
+### MCP Server Reference
+
+| Server | Role in QAIP | Stage used |
+|--------|-------------|-----------|
+| PLAYWRIGHT | Runs generated Playwright tests against SCIP and ARIA | Stage 4 — execute_tests |
+| GITHUB | Reads repo files, commits, and PRs for risk scoring and gap analysis | Stage 1 — ingest_story |
+| FILESYSTEM | Reads and writes local source files for code generation | Stage 3 — generate_tests |
+| JIRA | Reads story acceptance criteria and creates bug tickets for P0/P1 defects | Stage 7 — dispatch_results |
+| SLACK | Posts risk summary and defect count to qa-alerts channel | Stage 7 — dispatch_results |
+
+---
+
+### 1. Playwright MCP Server
+
+Executes the Playwright tests that QAIP generates in Stage 3. When connected, the AI agent controls a real browser — no simulation fallback.
+
+**Install:**
+
+```bash
+npm install -g @playwright/mcp
+```
+
+**Add to MCP config** (`mcp-servers/playwright.json` or `~/.claude/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--browser", "chromium"],
+      "env": {}
+    }
+  }
+}
+```
+
+**Verify:**
+
+```bash
+npx @playwright/mcp@latest --version
+```
+
+When PLAYWRIGHT is connected, Stage 4 runs actual browser tests against the target URL. When disconnected, Stage 4 runs in simulation mode and still produces execution result records, but no real browser is launched.
+
+---
+
+### 2. GitHub MCP Server
+
+Reads source files, commit history, pull requests, and workflow status for SCIP and ARIA repos. Required for accurate risk scoring and gap analysis in Stage 1 and 2.
+
+**Install:**
+
+```bash
+npm install -g @modelcontextprotocol/server-github
+```
+
+**Add to MCP config:**
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+**GitHub token scopes needed:**
+
+- `repo` — read files and PR data from SCIP and ARIA repos
+- `workflow` — read GitHub Actions status
+
+**Create a token:** GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens → select bkumars22/SupplyChainPlatformProject and bkumars22/ARIA
+
+---
+
+### 3. Filesystem MCP Server
+
+Reads and writes local source files. Used by the AI agent to read QAIP's own backend and ai-engine source when generating tests, and to write generated spec files to the tests directory.
+
+**Install:**
+
+```bash
+npm install -g @modelcontextprotocol/server-filesystem
+```
+
+**Add to MCP config:**
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "D:/KumarFolder/mydocs/TestMind"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+Replace the path with your actual QAIP clone directory. On Linux/Mac use a Unix path: `/home/you/QA-Intelligent-Platform`.
+
+---
+
+### 4. Jira MCP Server
+
+Reads story acceptance criteria at Stage 1 (ingest_story) and creates bug tickets at Stage 7 (dispatch_results) for every P0 and P1 defect. The AI explanation from Groq is used as the ticket description.
+
+**Install:**
+
+```bash
+npm install -g @modelcontextprotocol/server-jira
+```
+
+**Add to MCP config:**
+
+```json
+{
+  "mcpServers": {
+    "jira": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-jira"],
+      "env": {
+        "JIRA_URL": "https://your-org.atlassian.net",
+        "JIRA_EMAIL": "swamy.kumar02@gmail.com",
+        "JIRA_API_TOKEN": "your_jira_api_token"
+      }
+    }
+  }
+}
+```
+
+These same values must also be set in `.env` for the backend to create Jira tickets via the REST API fallback when MCP is not connected.
+
+**Get a Jira API token:** Atlassian Account → Security → Create and manage API tokens
+
+---
+
+### 5. Slack MCP Server
+
+Posts a test run summary to the qa-alerts channel at Stage 7 after every pipeline run. Message includes: project name, risk score, defect count by severity, and a link to the HTML report.
+
+**Install:**
+
+```bash
+npm install -g @modelcontextprotocol/server-slack
+```
+
+**Add to MCP config:**
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-your-bot-token",
+        "SLACK_TEAM_ID": "T0XXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+**Create a Slack app:** api.slack.com → Your Apps → Create New App → OAuth and Permissions → add `chat:write` and `channels:read` scopes → Install to workspace → copy Bot User OAuth Token
+
+The `SLACK_CHANNEL` environment variable in `.env` sets which channel receives alerts (default: `qa-alerts`).
+
+---
+
+### Full MCP Config (all 5 servers)
+
+Save as `mcp-servers/mcp_config.json` or `~/.claude/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--browser", "chromium"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/QA-Intelligent-Platform"]
+    },
+    "jira": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-jira"],
+      "env": {
+        "JIRA_URL": "https://your-org.atlassian.net",
+        "JIRA_EMAIL": "swamy.kumar02@gmail.com",
+        "JIRA_API_TOKEN": "your_token"
+      }
+    },
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-your-bot-token",
+        "SLACK_TEAM_ID": "T0XXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+### MCP Status in the Dashboard
+
+Each project page in QAIP has an MCP Status tab. It shows live connection state for all 5 servers and the last-checked timestamp. Status is polled every 60 seconds. To manually check from the API:
+
+```bash
+GET /api/projects/{id}/mcp-status
+Authorization: Bearer {your-jwt}
+```
+
+---
+
 ## Combined SCIP and ARIA Report
 
 After running analysis on both projects, generate the unified cross-project report:
