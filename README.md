@@ -17,10 +17,9 @@ Built by: B KumaraSwamy — Bangalore, India
 
 ## Live Access
 
-| What | URL |
-|------|-----|
-| QAIP Dashboard (GitHub Pages) | https://bkumars22.github.io/QA-Intelligent-Platform |
-| QAIP Backend API (Railway) | https://testmind-production.up.railway.app |
+| Project | URL |
+|---------|-----|
+| QAIP Dashboard | https://bkumars22.github.io/QA-Intelligent-Platform |
 | SCIP — Supply Chain Platform | https://bkumars22.github.io/SupplyChainPlatformProject |
 | ARIA — Adaptive Learning AI | https://bkumars22.github.io/ARIA |
 
@@ -66,7 +65,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Login at http://localhost:3000 with admin@qaip.io / Admin@2026
+Login with admin@qaip.io / Admin@2026
 
 SCIP and ARIA are seeded automatically on first startup via Flyway V19 migration. No manual setup needed.
 
@@ -153,7 +152,7 @@ How to use:
 Register SCIP via API:
 
 ```bash
-curl -X POST https://testmind-production.up.railway.app/api/projects \
+curl -X POST https://bkumars22.github.io/QA-Intelligent-Platform/api/projects \
   -H "Authorization: Bearer {your-jwt}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -212,7 +211,7 @@ High-risk files IsolationForest flags in SCIP:
 Register ARIA via API:
 
 ```bash
-curl -X POST https://testmind-production.up.railway.app/api/projects \
+curl -X POST https://bkumars22.github.io/QA-Intelligent-Platform/api/projects \
   -H "Authorization: Bearer {your-jwt}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -280,7 +279,7 @@ Push to SCIP or ARIA and QAIP runs analysis automatically.
 Register the webhook on each repo:
 
 1. Go to repo Settings > Webhooks > Add webhook
-2. Payload URL: https://testmind-production.up.railway.app/api/webhook/github
+2. Payload URL: {your-backend-url}/api/webhook/github
 3. Content type: application/json
 4. Events: Just the push event
 5. Click Add webhook
@@ -297,7 +296,7 @@ Register the webhook on each repo:
 After running analysis on both projects, generate the unified cross-project report:
 
 ```bash
-curl -X POST https://testmind-production.up.railway.app/api/ai/unified-report \
+curl -X POST {your-backend-url}/api/ai/unified-report \
   -H "Authorization: Bearer {your-jwt}"
 ```
 
@@ -318,7 +317,7 @@ Run both analyses and the table auto-populates with real numbers.
 
 ## API Reference
 
-Swagger UI: https://testmind-production.up.railway.app/swagger-ui.html
+Swagger UI: available at {your-backend-url}/swagger-ui.html after deploying the backend (see Deploy section below)
 
 ### Auth
 
