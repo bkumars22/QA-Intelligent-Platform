@@ -1,4 +1,12 @@
 import api from './api';
+import { getToken } from './api';
+import {
+  DEMO_TOKEN,
+  mockFrameworks,
+  mockExecutions,
+  mockResults,
+  getMockExecution,
+} from './mockData';
 
 export interface FrameworkProfile {
   id: number;
@@ -67,10 +75,15 @@ export interface ReportSummary {
   createdAt: string;
 }
 
+function isDemo(): boolean {
+  return getToken() === DEMO_TOKEN;
+}
+
 export const automationApi = {
-  // Framework
-  getFrameworks: (projectId: number) =>
-    api.get<FrameworkProfile[]>(`/automation/projects/${projectId}/frameworks`).then(r => r.data),
+  getFrameworks: (projectId: number): Promise<FrameworkProfile[]> => {
+    if (isDemo()) return Promise.resolve(mockFrameworks[projectId] ?? []);
+    return api.get<FrameworkProfile[]>(`/automation/projects/${projectId}/frameworks`).then(r => r.data);
+  },
 
   connectFramework: (data: {
     projectId: number;
@@ -78,33 +91,99 @@ export const automationApi = {
     repoUrl: string;
     branch: string;
     githubToken?: string;
-  }) => api.post<FrameworkProfile>('/automation/frameworks/connect', data).then(r => r.data),
+  }): Promise<FrameworkProfile> => {
+    if (isDemo()) {
+      const profile: FrameworkProfile = {
+        id: Date.now(),
+        projectId: data.projectId,
+        frameworkType: data.frameworkType as 'PLAYWRIGHT' | 'SELENIUM',
+        repoUrl: data.repoUrl,
+        branch: data.branch,
+        status: 'CONNECTED',
+        pageObjectsCount: 5,
+        testFilesCount: 8,
+        summaryText: `${data.frameworkType === 'PLAYWRIGHT' ? 'Playwright TypeScript' : 'Selenium Java'} framework connected from ${data.repoUrl}. QAIP analysed the repo structure and is ready to generate matching tests.`,
+        analysedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      if (!mockFrameworks[data.projectId]) mockFrameworks[data.projectId] = [];
+      mockFrameworks[data.projectId].push(profile);
+      return Promise.resolve(profile);
+    }
+    return api.post<FrameworkProfile>('/automation/frameworks/connect', data).then(r => r.data);
+  },
 
-  // Code generation
   generateCode: (data: {
     projectId: number;
     frameworkProfileId: number;
     suiteName: string;
     testCaseTitles?: string[];
     testCaseDescriptions?: string[];
-  }) => api.post<AutomationExecution>('/automation/generate-code', data).then(r => r.data),
+  }): Promise<AutomationExecution> => {
+    if (isDemo()) {
+      const titles = data.testCaseTitles ?? ['Generated test'];
+      const code = `import { test, expect } from '@playwright/test';\n\ntest.describe('${data.suiteName}', () => {\n${
+        titles.map(t => `\n  test('${t}', async ({ page }) => {\n    // AI-generated test for: ${t}\n    await page.goto('https://bkumars22.github.io/${data.projectId === 1 ? 'SupplyChainPlatformProject' : 'ARIA'}');\n    await expect(page).toHaveTitle(/.+/);\n  });`).join('\n')
+      }\n\n});\n`;
+      const exec: AutomationExecution = {
+        id: Date.now(),
+        projectId: data.projectId,
+        frameworkProfileId: data.frameworkProfileId,
+        suiteName: data.suiteName,
+        frameworkType: 'PLAYWRIGHT',
+        generatedCode: code,
+        status: 'QUEUED',
+        totalTests: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        triggeredBy: 'admin@qaip.io',
+        createdAt: new Date().toISOString(),
+      };
+      if (!mockExecutions[data.projectId]) mockExecutions[data.projectId] = [];
+      mockExecutions[data.projectId].unshift(exec);
+      return Promise.resolve(exec);
+    }
+    return api.post<AutomationExecution>('/automation/generate-code', data).then(r => r.data);
+  },
 
-  // Execution
-  execute: (executionId: number, appUrl?: string) =>
-    api.post<AutomationExecution>(`/automation/execute/${executionId}`, null, {
+  execute: (executionId: number, appUrl?: string): Promise<AutomationExecution> => {
+    if (isDemo()) {
+      const exec = getMockExecution(executionId);
+      if (exec) {
+        exec.status = 'PASSED';
+        exec.totalTests = 3;
+        exec.passed = 3;
+        exec.failed = 0;
+        exec.completedAt = new Date().toISOString();
+      }
+      return Promise.resolve(exec ?? { id: executionId } as AutomationExecution);
+    }
+    return api.post<AutomationExecution>(`/automation/execute/${executionId}`, null, {
       params: appUrl ? { appUrl } : {},
-    }).then(r => r.data),
+    }).then(r => r.data);
+  },
 
-  getExecutions: (projectId: number) =>
-    api.get<AutomationExecution[]>(`/automation/projects/${projectId}/executions`).then(r => r.data),
+  getExecutions: (projectId: number): Promise<AutomationExecution[]> => {
+    if (isDemo()) return Promise.resolve(mockExecutions[projectId] ?? []);
+    return api.get<AutomationExecution[]>(`/automation/projects/${projectId}/executions`).then(r => r.data);
+  },
 
-  getExecution: (id: number) =>
-    api.get<AutomationExecution>(`/automation/executions/${id}`).then(r => r.data),
+  getExecution: (id: number): Promise<AutomationExecution> => {
+    if (isDemo()) {
+      const exec = getMockExecution(id);
+      return exec ? Promise.resolve(exec) : Promise.reject(new Error('Not found'));
+    }
+    return api.get<AutomationExecution>(`/automation/executions/${id}`).then(r => r.data);
+  },
 
-  getResults: (executionId: number) =>
-    api.get<AutomationResult[]>(`/automation/executions/${executionId}/results`).then(r => r.data),
+  getResults: (executionId: number): Promise<AutomationResult[]> => {
+    if (isDemo()) return Promise.resolve(mockResults[executionId] ?? []);
+    return api.get<AutomationResult[]>(`/automation/executions/${executionId}/results`).then(r => r.data);
+  },
 
-  // Reports
-  getReports: (projectId: number) =>
-    api.get<ReportSummary[]>(`/automation/projects/${projectId}/reports`).then(r => r.data),
+  getReports: (projectId: number): Promise<ReportSummary[]> => {
+    if (isDemo()) return Promise.resolve([]);
+    return api.get<ReportSummary[]>(`/automation/projects/${projectId}/reports`).then(r => r.data);
+  },
 };

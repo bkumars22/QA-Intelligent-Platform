@@ -250,10 +250,10 @@ function ExecutionCard({ exec, projectId }: { exec: AutomationExecution; project
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function AutomationTab({ projectId }: { projectId: number }) {
+export function AutomationTab({ projectId, projectRepoUrl }: { projectId: number; projectRepoUrl?: string }) {
   const qc = useQueryClient();
   const [selectedFw, setSelectedFw] = useState<FwType>('PLAYWRIGHT');
-  const [repoUrl, setRepoUrl] = useState('');
+  const [repoUrl, setRepoUrl] = useState(projectRepoUrl ?? '');
   const [branch, setBranch] = useState('main');
   const [githubToken, setGithubToken] = useState('');
   const [suiteName, setSuiteName] = useState('');

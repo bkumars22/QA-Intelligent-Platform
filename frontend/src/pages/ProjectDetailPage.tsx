@@ -342,7 +342,7 @@ export function ProjectDetailPage() {
 
       {/* Tab: Automation */}
       {activeTab === 'automation' && (
-        <AutomationTab projectId={projectId} />
+        <AutomationTab projectId={projectId} projectRepoUrl={project?.repoUrl} />
       )}
 
       {/* Tab: MCP Status */}
