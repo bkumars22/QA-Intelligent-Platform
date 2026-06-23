@@ -1,52 +1,76 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, AlertCircle } from 'lucide-react';
+import { Brain, AlertCircle, Wifi, WifiOff, Loader } from 'lucide-react';
+import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
+
+type BackendStatus = 'checking' | 'online' | 'offline';
+
+const BACKEND_URL = import.meta.env.VITE_API_URL ?? '';
+
+async function pingBackend(): Promise<boolean> {
+  try {
+    const url = BACKEND_URL ? `${BACKEND_URL}/api/health` : '/api/health';
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function isNetworkFailure(err: unknown): boolean {
+  // Axios: no response object means the server was unreachable
+  if (axios.isAxiosError(err) && !err.response) return true;
+  if (err instanceof TypeError) return true;
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return msg.includes('network') || msg.includes('failed to fetch') || msg.includes('err_network');
+  }
+  return false;
+}
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const { login, demoLogin } = useAuth();
   const navigate = useNavigate();
+
+  // Ping the backend on mount so the user sees live status before trying to log in
+  useEffect(() => {
+    pingBackend().then((ok) => setBackendStatus(ok ? 'online' : 'offline'));
+  }, []);
 
   const handleDemo = () => {
     demoLogin();
     navigate('/dashboard');
   };
 
-  const DEMO_CREDENTIALS = [
-    { email: 'admin', password: 'admin' },
-    { email: 'admin@qaip.io', password: 'admin' },
-    { email: 'admin@qaip.io', password: 'Admin@2026' },
-    { email: 'admin@testmind.io', password: 'Admin@2026' },
-  ];
-
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    // Allow known credentials to work locally without backend
-    const isDemo = DEMO_CREDENTIALS.some(
-      (c) => c.email === email.trim() && c.password === password
-    );
-    if (isDemo) {
+    // Only the plain shorthand 'admin' / 'admin' triggers instant demo
+    // Every real email address always goes to the backend
+    const trimmedEmail = email.trim();
+    if (trimmedEmail === 'admin' && password === 'admin') {
       demoLogin();
       navigate('/dashboard');
       return;
     }
 
     try {
-      await login(email, password);
+      await login(trimmedEmail, password);
       navigate('/dashboard');
     } catch (err: unknown) {
-      const isNetworkError =
-        err instanceof TypeError ||
-        (err instanceof Error && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed')));
-      if (isNetworkError) {
-        setError('Backend not connected. Try: admin / admin to access the dashboard.');
+      if (isNetworkFailure(err)) {
+        setError(
+          'Cannot reach the backend. Use "Enter as Demo Admin" to explore the platform, ' +
+          'or contact the administrator to check Railway deployment.'
+        );
       } else {
         setError('Invalid email or password. Please try again.');
       }
@@ -108,10 +132,22 @@ export function LoginPage() {
           </div>
 
           <h2 className="text-2xl font-bold text-gray-900">Sign in to your account</h2>
-          <p className="mt-1 text-sm text-gray-500">Use <strong>admin</strong> / <strong>admin</strong> to sign in</p>
+
+          {/* Live backend status */}
+          <div className="mt-2 flex items-center gap-2">
+            {backendStatus === 'checking' && (
+              <><Loader size={13} className="text-gray-400 animate-spin" /><span className="text-xs text-gray-400">Checking backend…</span></>
+            )}
+            {backendStatus === 'online' && (
+              <><Wifi size={13} className="text-green-500" /><span className="text-xs text-green-600 font-medium">Backend online — sign in with your account</span></>
+            )}
+            {backendStatus === 'offline' && (
+              <><WifiOff size={13} className="text-amber-500" /><span className="text-xs text-amber-600 font-medium">Backend offline — use Demo Admin or try admin / admin</span></>
+            )}
+          </div>
 
           {/* Demo access — no backend required */}
-          <div className="mt-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
+          <div className="mt-5 p-4 rounded-xl bg-blue-50 border border-blue-200">
             <p className="text-sm font-medium text-blue-800 mb-1">Try the demo instantly</p>
             <p className="text-xs text-blue-600 mb-3">Access the full dashboard without any credentials. No account needed.</p>
             <button
