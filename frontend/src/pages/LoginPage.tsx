@@ -23,8 +23,15 @@ export function LoginPage() {
     try {
       await login(email, password);
       navigate('/dashboard');
-    } catch {
-      setError('Invalid email or password. Please try again.');
+    } catch (err: unknown) {
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed')));
+      if (isNetworkError) {
+        setError('Backend is not reachable. Use "Enter as Demo Admin" above to access the dashboard, or deploy the backend and try again.');
+      } else {
+        setError('Invalid email or password. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
