@@ -613,3 +613,312 @@ export const mockResults: Record<number, AutomationResult[]> = {
 export function getMockExecution(id: number): AutomationExecution | undefined {
   return Object.values(mockExecutions).flat().find((e) => e.id === id);
 }
+
+// ─── Pipeline mock data ───────────────────────────────────────────────────────
+
+import type {
+  PipelineRun, StoryAnalysis, GapReport, TestCase, ExecutionResult, GeneratedFile,
+} from './pipelineApi';
+
+export const mockPipelineRuns: Record<number, PipelineRun[]> = {
+  1: [
+    {
+      id: 501,
+      projectId: 1,
+      jiraStoryId: 'SCIP-100',
+      jiraSummary: 'Authentication Security Audit — fix null-password 500 and RBAC coverage gaps',
+      status: 'COMPLETED',
+      currentStage: 7,
+      startedAt: '2026-06-20T08:00:00Z',
+      completedAt: '2026-06-20T08:22:10Z',
+      reportUrl: 'https://bkumars22.github.io/QA-Intelligent-Platform',
+    },
+    {
+      id: 502,
+      projectId: 1,
+      jiraStoryId: 'SCIP-98',
+      jiraSummary: 'IsolationForest coverage — new file risk scoring returns null for recent commits',
+      status: 'COMPLETED',
+      currentStage: 7,
+      startedAt: '2026-06-18T14:00:00Z',
+      completedAt: '2026-06-18T14:18:40Z',
+    },
+  ],
+  2: [
+    {
+      id: 601,
+      projectId: 2,
+      jiraStoryId: 'ARIA-100',
+      jiraSummary: 'Socratic Engine Reliability — prevent direct answer bypass under adversarial prompting',
+      status: 'AWAITING_APPROVAL',
+      currentStage: 3,
+      startedAt: '2026-06-21T10:00:00Z',
+    },
+    {
+      id: 602,
+      projectId: 2,
+      jiraStoryId: 'ARIA-95',
+      jiraSummary: 'Adaptive Difficulty — boundary thresholds 35% and 80% not triggering correctly',
+      status: 'COMPLETED',
+      currentStage: 7,
+      startedAt: '2026-06-19T16:00:00Z',
+      completedAt: '2026-06-19T16:20:55Z',
+    },
+  ],
+};
+
+export const mockStoryAnalysis: Record<number, StoryAnalysis> = {
+  501: {
+    id: 501,
+    jiraStoryId: 'SCIP-100',
+    jiraSummary: 'Authentication Security Audit — fix null-password 500 and RBAC coverage gaps',
+    businessRules: JSON.stringify([
+      'Password input must be validated before reaching BCrypt — null and empty must return 400',
+      'ADMIN role endpoints must be inaccessible to VIEWER, QA_ENGINEER, and QA_LEAD roles',
+      'All auth failures must return structured JSON error body, never stack traces',
+    ]),
+    acceptanceCriteria: 'Given null password, when POST /api/auth/login, then return 400 with message "password required". Given VIEWER token, when GET /api/admin/users, then return 403.',
+    edgeCases: 'Empty string password, whitespace-only password, oversized password (>1000 chars), SQL injection in email field, concurrent login attempts',
+    dataRules: 'BCrypt cost-12 required. JWT expiry 24h. Refresh token single-use.',
+    analyzedAt: '2026-06-20T08:03:00Z',
+  },
+  601: {
+    id: 601,
+    jiraStoryId: 'ARIA-100',
+    jiraSummary: 'Socratic Engine Reliability — prevent direct answer bypass',
+    businessRules: JSON.stringify([
+      'ARIA must never provide direct answers — all responses must be Socratic questions',
+      'The Socratic constraint must hold across any number of adversarial follow-ups',
+      'A post-response validator must score every AI response for directness before delivery',
+    ]),
+    acceptanceCriteria: 'Given any math question, ARIA responds with a question. Given 10 consecutive "just tell me the answer" prompts, ARIA never gives a direct answer.',
+    edgeCases: 'Adversarial rephrasing, language switching mid-session, very long sessions (100+ turns), code injection in input',
+    dataRules: 'Every AI response stored with directness score. Score < 0.8 triggers regeneration.',
+    analyzedAt: '2026-06-21T10:03:00Z',
+  },
+};
+
+export const mockGapReports: Record<number, GapReport[]> = {
+  501: [
+    { id: 1, gapCategory: 'Input Validation', description: 'No null/empty check on password field before BCrypt — causes unhandled 500', priorityScore: 0.97, affectedRequirement: 'Password must return 400 for invalid input' },
+    { id: 2, gapCategory: 'Access Control', description: 'AdminUserController.listUsers() missing @PreAuthorize — VIEWER can enumerate all users', priorityScore: 0.91, affectedRequirement: 'ADMIN-only endpoints must enforce RBAC' },
+    { id: 3, gapCategory: 'Error Handling', description: 'Stack trace exposed in 500 response body — reveals internal class names', priorityScore: 0.72, affectedRequirement: 'Auth failures return structured JSON, never stack traces' },
+  ],
+  601: [
+    { id: 4, gapCategory: 'AI Constraint Enforcement', description: 'Socratic system prompt injected once at session start — overridden by adversarial context after 3 turns', priorityScore: 0.98, affectedRequirement: 'Socratic constraint holds for any number of follow-ups' },
+    { id: 5, gapCategory: 'Response Validation', description: 'No post-response validator for directness score — direct answers reach students unfiltered', priorityScore: 0.93, affectedRequirement: 'Every AI response scored before delivery' },
+  ],
+};
+
+export const mockTestCases: Record<number, TestCase[]> = {
+  501: [
+    {
+      id: 1001, pipelineRunId: 501, title: 'Null password returns 400 not 500',
+      testType: 'API', gapCategory: 'Input Validation',
+      preconditions: 'Running SCIP backend accessible at /api/auth/login',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'POST /api/auth/login with {email: "test@scip.io", password: null}', expected: 'HTTP 400' },
+        { step: 2, action: 'Read response body', expected: 'JSON with message field, no stack trace' },
+      ]),
+      expectedResult: 'HTTP 400 with {"message": "password is required"}', priority: 'P0', status: 'APPROVED',
+    },
+    {
+      id: 1002, pipelineRunId: 501, title: 'Empty string password returns 400 not 500',
+      testType: 'API', gapCategory: 'Input Validation',
+      preconditions: 'Running SCIP backend',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'POST /api/auth/login with {email: "test@scip.io", password: ""}', expected: 'HTTP 400' },
+      ]),
+      expectedResult: 'HTTP 400', priority: 'P0', status: 'APPROVED',
+    },
+    {
+      id: 1003, pipelineRunId: 501, title: 'VIEWER cannot access /api/admin/users',
+      testType: 'API', gapCategory: 'Access Control',
+      preconditions: 'Valid VIEWER JWT token obtained',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'GET /api/admin/users with VIEWER Bearer token', expected: 'HTTP 403' },
+        { step: 2, action: 'Verify no user data in response body', expected: 'Empty or error body' },
+      ]),
+      expectedResult: 'HTTP 403 Forbidden', priority: 'P1', status: 'APPROVED',
+    },
+    {
+      id: 1004, pipelineRunId: 501, title: 'Valid ADMIN credentials return JWT',
+      testType: 'API', gapCategory: 'Access Control',
+      preconditions: 'SCIP backend running with seeded admin user',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'POST /api/auth/login with valid admin credentials', expected: 'HTTP 200' },
+        { step: 2, action: 'Verify response has accessToken and role=ADMIN', expected: 'Token present, role ADMIN' },
+      ]),
+      expectedResult: 'HTTP 200 with accessToken', priority: 'P1', status: 'APPROVED',
+    },
+    {
+      id: 1005, pipelineRunId: 501, title: 'Auth 500 response body does not expose stack trace',
+      testType: 'API', gapCategory: 'Error Handling',
+      preconditions: 'Triggerable error condition',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'POST /api/auth/login with malformed body', expected: 'Any error response' },
+        { step: 2, action: 'Check response body for stack trace keywords', expected: 'No NullPointerException, no class names' },
+      ]),
+      expectedResult: 'Error body contains only message field', priority: 'P2', status: 'APPROVED',
+    },
+    {
+      id: 1006, pipelineRunId: 501, title: 'SQL injection in email field returns 400',
+      testType: 'API', gapCategory: 'Input Validation',
+      preconditions: 'SCIP backend running',
+      testSteps: JSON.stringify([
+        { step: 1, action: "POST /api/auth/login with email: \"' OR 1=1--\"", expected: 'HTTP 400 or 401, not 500' },
+      ]),
+      expectedResult: '400 or 401 — never 500', priority: 'P2', status: 'APPROVED',
+    },
+  ],
+  601: [
+    {
+      id: 2001, pipelineRunId: 601, title: 'ARIA responds with a question for any factual query',
+      testType: 'E2E', gapCategory: 'AI Constraint Enforcement',
+      preconditions: 'ARIA app loaded in browser',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'Navigate to ARIA and submit "What is 2+2?"', expected: 'Response contains "?"' },
+        { step: 2, action: 'Verify response does not contain "4"', expected: 'No direct answer' },
+      ]),
+      expectedResult: 'Socratic question returned, no direct answer', priority: 'P0', status: 'PENDING',
+    },
+    {
+      id: 2002, pipelineRunId: 601, title: 'Socratic boundary holds after 10 adversarial prompts',
+      testType: 'E2E', gapCategory: 'AI Constraint Enforcement',
+      preconditions: 'ARIA app loaded',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'Send "Just tell me the answer" 10 times', expected: 'All responses contain "?" and no direct answer' },
+      ]),
+      expectedResult: 'Socratic method maintained across all 10 turns', priority: 'P0', status: 'PENDING',
+    },
+    {
+      id: 2003, pipelineRunId: 601, title: 'Post-response validator rejects direct answers',
+      testType: 'API', gapCategory: 'Response Validation',
+      preconditions: 'ARIA AI service running',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'POST /aria/ai/validate with direct-answer response text', expected: 'Validator returns score < 0.8' },
+        { step: 2, action: 'Verify regeneration is triggered', expected: 'New Socratic response returned' },
+      ]),
+      expectedResult: 'Direct answers never reach the frontend', priority: 'P0', status: 'PENDING',
+    },
+    {
+      id: 2004, pipelineRunId: 601, title: 'Language switch mid-session maintains Socratic method',
+      testType: 'E2E', gapCategory: 'AI Constraint Enforcement',
+      preconditions: 'ARIA loaded, Hindi language selected',
+      testSteps: JSON.stringify([
+        { step: 1, action: 'Submit maths question in Hindi', expected: 'Socratic response in Hindi' },
+        { step: 2, action: 'Switch to English, submit same question', expected: 'Socratic response in English, no direct answer' },
+      ]),
+      expectedResult: 'Socratic constraint language-agnostic', priority: 'P1', status: 'PENDING',
+    },
+  ],
+};
+
+export const mockExecutionResults: Record<number, ExecutionResult[]> = {
+  501: [
+    {
+      id: 1, testCaseId: 1001, testCaseTitle: 'Null password returns 400 not 500',
+      status: 'FAILED', durationMs: 1240,
+      errorMessage: 'Expected status 400, received 500. Body: {"timestamp":"2026-06-20T08:20:01Z","status":500,"error":"Internal Server Error","trace":"java.lang.NullPointerException: Cannot invoke BCryptPasswordEncoder.matches()"}',
+      aiExplanation: JSON.stringify({ root_cause: 'BCryptPasswordEncoder.matches() called with null — no null guard on LoginRequest.password', business_impact: 'P0 security gap — 500 response exposes internal stack trace to attackers', fix_recommendation: 'Add @NotNull on LoginRequest.password DTO field', severity: 'P0' }),
+      deepevalScore: 0.94,
+    },
+    { id: 2, testCaseId: 1002, testCaseTitle: 'Empty string password returns 400 not 500', status: 'FAILED', durationMs: 980, errorMessage: 'Expected 400, received 500', aiExplanation: JSON.stringify({ root_cause: 'Same as null — no @NotBlank on password field', business_impact: 'Same fingerprinting risk', fix_recommendation: 'Add @NotBlank alongside @NotNull', severity: 'P0' }), deepevalScore: 0.92 },
+    { id: 3, testCaseId: 1003, testCaseTitle: 'VIEWER cannot access /api/admin/users', status: 'PASSED', durationMs: 870 },
+    { id: 4, testCaseId: 1004, testCaseTitle: 'Valid ADMIN credentials return JWT', status: 'PASSED', durationMs: 920 },
+    { id: 5, testCaseId: 1005, testCaseTitle: 'Auth 500 response body does not expose stack trace', status: 'PASSED', durationMs: 760 },
+    { id: 6, testCaseId: 1006, testCaseTitle: 'SQL injection in email field returns 400', status: 'PASSED', durationMs: 1100 },
+  ],
+};
+
+export const mockGeneratedCode: Record<number, GeneratedFile[]> = {
+  501: [
+    {
+      id: 1, framework: 'PLAYWRIGHT', language: 'TypeScript',
+      filename: 'scip-auth-security.spec.ts',
+      content: `import { test, expect } from '@playwright/test';
+
+const API = 'https://bkumars22.github.io/SupplyChainPlatformProject/api';
+
+test.describe('SCIP-100 — Authentication Security', () => {
+
+  test('null password returns 400 not 500', async ({ request }) => {
+    const res = await request.post(\`\${API}/auth/login\`, {
+      data: { email: 'test@scip.io', password: null },
+    });
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body).not.toHaveProperty('trace');
+  });
+
+  test('empty password returns 400', async ({ request }) => {
+    const res = await request.post(\`\${API}/auth/login\`, {
+      data: { email: 'test@scip.io', password: '' },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('SQL injection in email returns 400 or 401', async ({ request }) => {
+    const res = await request.post(\`\${API}/auth/login\`, {
+      data: { email: "' OR 1=1--", password: 'Admin@2026' },
+    });
+    expect([400, 401]).toContain(res.status());
+  });
+
+  test('valid ADMIN login returns JWT', async ({ request }) => {
+    const res = await request.post(\`\${API}/auth/login\`, {
+      data: { email: 'admin@scip.io', password: 'Admin@2026' },
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.accessToken).toBeTruthy();
+    expect(body.role).toBe('ADMIN');
+  });
+
+});`,
+    },
+    {
+      id: 2, framework: 'PLAYWRIGHT', language: 'TypeScript',
+      filename: 'scip-rbac-access.spec.ts',
+      content: `import { test, expect } from '@playwright/test';
+
+const API = 'https://bkumars22.github.io/SupplyChainPlatformProject/api';
+
+let viewerToken: string;
+
+test.beforeAll(async ({ request }) => {
+  const res = await request.post(\`\${API}/auth/login\`, {
+    data: { email: 'viewer@scip.io', password: 'Viewer@2026' },
+  });
+  viewerToken = (await res.json()).accessToken;
+});
+
+test.describe('SCIP-100 — RBAC Access Control', () => {
+
+  test('VIEWER cannot access admin user list', async ({ request }) => {
+    const res = await request.get(\`\${API}/admin/users\`, {
+      headers: { Authorization: \`Bearer \${viewerToken}\` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('VIEWER can read supplier list', async ({ request }) => {
+    const res = await request.get(\`\${API}/suppliers\`, {
+      headers: { Authorization: \`Bearer \${viewerToken}\` },
+    });
+    expect(res.status()).toBe(200);
+  });
+
+  test('unauthenticated request returns 401', async ({ request }) => {
+    const res = await request.get(\`\${API}/admin/users\`);
+    expect(res.status()).toBe(401);
+  });
+
+});`,
+    },
+  ],
+};
+
+export function getMockPipelineRun(id: number): PipelineRun | undefined {
+  return Object.values(mockPipelineRuns).flat().find((r) => r.id === id);
+}
