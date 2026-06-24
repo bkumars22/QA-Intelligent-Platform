@@ -43,6 +43,7 @@ class AgentState(TypedDict):
     file_list: list[dict]          # [{path, content, diff, lines_changed}]
     risk_scores: list[dict]        # [{file_path, score, anomaly_flag}]
     coverage_gaps: list[dict]      # [{file_path, has_test, priority}]
+    rag_context: list[dict]        # [{file_path, examples: str}] — injected by retrieve_context
     generated_tests: list[dict]    # [{file_path, test_code, language}]
     defects: list[dict]            # [{title, severity, description, stack_trace}]
     explained_defects: list[dict]  # defects + ai_explanation + consistency_score
@@ -299,7 +300,52 @@ def identify_gaps(state: AgentState) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
-# Node 4 — generate_tests
+# Node 3.5 — retrieve_context  (RAG: pulls similar test cases from pgvector)
+# ---------------------------------------------------------------------------
+
+def retrieve_context(state: AgentState) -> AgentState:
+    """Retrieve similar past test cases for each coverage-gap file.
+
+    Injects them into state["rag_context"] as pre-formatted few-shot
+    examples. If RAG is unavailable the state is left unchanged and
+    generate_tests falls back to zero-shot generation.
+    """
+    state["status"] = "RETRIEVING_CONTEXT"
+    logger.info("[%s] retrieve_context started", state["run_id"])
+
+    try:
+        from rag.retriever import retrieve_for_file, format_few_shot_examples
+        from rag.vector_store import ensure_schema
+
+        ensure_schema()
+
+        gaps = state.get("coverage_gaps", [])
+        rag_context: list[dict] = []
+
+        for gap in gaps[:5]:
+            file_path = gap.get("file_path", "")
+            if not file_path:
+                continue
+            retrieved = retrieve_for_file(
+                project_id=state["project_id"],
+                file_path=file_path,
+                top_k=3,
+            )
+            examples = format_few_shot_examples(retrieved)
+            rag_context.append({"file_path": file_path, "examples": examples, "retrieved_count": len(retrieved)})
+            logger.info("[%s] RAG: %d examples for %s", state["run_id"], len(retrieved), file_path)
+
+        state["rag_context"] = rag_context
+
+    except Exception as exc:
+        logger.warning("[%s] retrieve_context failed (non-fatal): %s", state["run_id"], exc)
+        state["rag_context"] = []
+
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Node 4 — generate_tests  (RAG-enhanced: uses retrieved few-shot examples)
 # ---------------------------------------------------------------------------
 _SYSTEM_GENERATE = (
     "You are a senior QA engineer. Generate production-quality Playwright TypeScript tests.\n"
@@ -310,7 +356,8 @@ _SYSTEM_GENERATE = (
     "4. Use Page Object Model pattern\n"
     "5. Include meaningful assertions\n"
     "6. Tests must be executable — not examples\n"
-    "7. Return ONLY the TypeScript code, no explanation"
+    "7. If past test examples are provided, match their style, imports, and fixture patterns\n"
+    "8. Return ONLY the TypeScript code, no explanation"
 )
 
 
@@ -321,6 +368,7 @@ def generate_tests(state: AgentState) -> AgentState:
     try:
         gaps = state.get("coverage_gaps", [])
         file_map = {f["path"]: f for f in state.get("file_list", [])}
+        rag_map = {ctx["file_path"]: ctx["examples"] for ctx in state.get("rag_context", []) if ctx.get("examples")}
         client = _groq_client()
         generated: list[dict] = []
 
@@ -329,10 +377,15 @@ def generate_tests(state: AgentState) -> AgentState:
             file_info = file_map.get(file_path, {})
             content = file_info.get("content", "")
 
+            # Prepend RAG few-shot examples when available
+            rag_examples = rag_map.get(file_path, "")
+            rag_section = f"\n\n{rag_examples}\n\n" if rag_examples else ""
+
             user_prompt = (
                 f"Generate Playwright TypeScript tests for this file:\n\n"
                 f"File: {file_path}\n\n"
                 f"Content:\n{content[:3000]}"
+                f"{rag_section}"
             )
 
             try:
@@ -355,11 +408,29 @@ def generate_tests(state: AgentState) -> AgentState:
                     "file_path": file_path,
                     "test_code": test_code,
                     "language": "typescript",
+                    "rag_examples_used": bool(rag_examples),
                 }
             )
-            logger.info("[%s] Generated tests for %s", state["run_id"], file_path)
+            logger.info("[%s] Generated tests for %s (RAG=%s)", state["run_id"], file_path, bool(rag_examples))
 
         state["generated_tests"] = generated
+
+        # ── Auto-ingest this run's test cases back into RAG ──
+        try:
+            from rag.ingest import ingest_run_result
+            ingest_run_result(
+                project_id=state["project_id"],
+                run_id=state["run_id"],
+                repo_url=state["repo_url"],
+                commit_sha=state["commit_sha"],
+                risk_scores=state.get("risk_scores", []),
+                coverage_gaps=state.get("coverage_gaps", []),
+                generated_tests=generated,
+                defects=[],  # defects added later by dispatch_results
+            )
+            logger.info("[%s] Auto-ingested test cases into RAG", state["run_id"])
+        except Exception as ingest_exc:
+            logger.warning("[%s] RAG auto-ingest failed (non-fatal): %s", state["run_id"], ingest_exc)
 
     except Exception as exc:
         logger.exception("[%s] generate_tests failed: %s", state["run_id"], exc)
@@ -859,6 +930,7 @@ def build_graph() -> StateGraph:
     graph.add_node("fetch_codebase", fetch_codebase)
     graph.add_node("score_risk", score_risk)
     graph.add_node("identify_gaps", identify_gaps)
+    graph.add_node("retrieve_context", retrieve_context)
     graph.add_node("generate_tests", generate_tests)
     graph.add_node("detect_defects", detect_defects)
     graph.add_node("explain_and_score", explain_and_score)
@@ -870,7 +942,8 @@ def build_graph() -> StateGraph:
     for src, dst in [
         ("fetch_codebase", "score_risk"),
         ("score_risk", "identify_gaps"),
-        ("identify_gaps", "generate_tests"),
+        ("identify_gaps", "retrieve_context"),
+        ("retrieve_context", "generate_tests"),
         ("generate_tests", "detect_defects"),
         ("detect_defects", "explain_and_score"),
         ("explain_and_score", "dispatch_results"),

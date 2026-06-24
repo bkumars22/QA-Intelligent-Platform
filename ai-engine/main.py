@@ -183,6 +183,7 @@ async def analyze(payload: AnalyzeRequest, background_tasks: BackgroundTasks):
         "file_list": [],
         "risk_scores": [],
         "coverage_gaps": [],
+        "rag_context": [],
         "generated_tests": [],
         "defects": [],
         "explained_defects": [],
@@ -832,3 +833,90 @@ Keep it professional and concise."""
         )
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# RAG endpoints
+# ---------------------------------------------------------------------------
+
+class RagIngestRequest(BaseModel):
+    project_id: int
+    source_type: str = Field(..., description="test_case | defect | jira_story | run_result")
+    source_id: str
+    content: str
+    metadata: dict[str, Any] = {}
+
+
+class RagQueryRequest(BaseModel):
+    project_id: int
+    question: str
+    top_k: int = 5
+    source_type: str | None = None
+
+
+class JiraIngestRequest(BaseModel):
+    project_id: int
+    story_key: str
+    title: str
+    description: str
+    acceptance_criteria: str = ""
+    story_type: str = "Story"
+
+
+@app.post("/rag/ingest")
+async def rag_ingest(payload: RagIngestRequest):
+    """Ingest a document directly into the QAIP RAG store."""
+    try:
+        from rag.embedder import embed
+        from rag.vector_store import upsert, ensure_schema
+
+        ensure_schema()
+        embedding = embed(payload.content)
+        doc_id = upsert(
+            content=payload.content,
+            embedding=embedding,
+            source_type=payload.source_type,
+            source_id=payload.source_id,
+            project_id=str(payload.project_id),
+            metadata=payload.metadata,
+        )
+        return {"status": "ok", "id": doc_id}
+    except Exception as exc:
+        logger.warning("RAG ingest failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/rag/query")
+async def rag_query(payload: RagQueryRequest):
+    """Natural-language search over QAIP's RAG store."""
+    try:
+        from rag.retriever import query
+        results = query(
+            project_id=payload.project_id,
+            question=payload.question,
+            top_k=payload.top_k,
+            source_type=payload.source_type,
+        )
+        return {"results": results, "count": len(results)}
+    except Exception as exc:
+        logger.warning("RAG query failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/rag/ingest-jira")
+async def rag_ingest_jira(payload: JiraIngestRequest):
+    """Store a Jira story so future test generation understands the intent."""
+    try:
+        from rag.ingest import ingest_jira_story
+        ok = ingest_jira_story(
+            project_id=payload.project_id,
+            story_key=payload.story_key,
+            title=payload.title,
+            description=payload.description,
+            acceptance_criteria=payload.acceptance_criteria,
+            story_type=payload.story_type,
+        )
+        return {"status": "ok" if ok else "failed"}
+    except Exception as exc:
+        logger.warning("Jira ingest failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
