@@ -86,41 +86,41 @@ Better test code → stored back into RAG
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    QAIP System                          │
-│                                                         │
-│  React 18 Frontend ──► Spring Boot 3.3 Backend          │
-│       (GitHub Pages)       (Railway)                    │
-│                              │                          │
-│                    PostgreSQL + pgvector                 │
-│                    (Railway managed)                    │
-│                              │                          │
-│                    Python AI Engine                     │
-│                    (FastAPI + LangGraph)                │
-│                              │                          │
-│              ┌───────────────┼───────────────┐          │
-│         Groq API       pgvector RAG      GitHub API     │
-│      (Llama-3.3-70b)  (384-dim vecs)   (code fetch)    │
-└─────────────────────────────────────────────────────────┘
+
+                    QAIP System                          
+                                                         
+  React 18 Frontend  Spring Boot 3.3 Backend          
+       (GitHub Pages)       (Railway)                    
+                                                        
+                    PostgreSQL + pgvector                 
+                    (Railway managed)                    
+                                                        
+                    Python AI Engine                     
+                    (FastAPI + LangGraph)                
+                                                        
+                        
+         Groq API       pgvector RAG      GitHub API     
+      (Llama-3.3-70b)  (384-dim vecs)   (code fetch)    
+
 ```
 
 ### LangGraph Pipeline (8 nodes)
 
 ```
 fetch_codebase
-     │
+     
 score_risk          ← IsolationForest anomaly detection
-     │
+     
 identify_gaps       ← files with no test coverage
-     │
+     
 retrieve_context    ← NEW: pgvector RAG, similar past tests
-     │
+     
 generate_tests      ← Groq Llama + RAG few-shot examples
-     │
+     
 detect_defects      ← pattern-based vulnerability scanning
-     │
+     
 explain_and_score   ← AI root-cause analysis per defect
-     │
+     
 dispatch_results    ← saves to PostgreSQL, triggers auto-ingest
 ```
 
