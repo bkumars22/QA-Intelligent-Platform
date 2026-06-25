@@ -463,7 +463,7 @@ export function AutomationTab({
           {activeTab === 'explorer' && (
             <FrameworkExplorer
               profile={connectedProfile}
-              onExecution={exec => qc.invalidateQueries({ queryKey: ['automation-executions', projectId] })}
+              onExecution={() => qc.invalidateQueries({ queryKey: ['automation-executions', projectId] })}
             />
           )}
 

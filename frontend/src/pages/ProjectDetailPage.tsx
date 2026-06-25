@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   LineChart,
   Line,
@@ -57,8 +57,6 @@ export function ProjectDetailPage() {
   const [severityFilter, setSeverityFilter] = useState<DefectSeverity | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<DefectStatus | 'ALL'>('ALL');
   const [generatedForFile, setGeneratedForFile] = useState<string | null>(null);
-  const queryClient = useQueryClient();
-
   const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: getProjects });
   const project = projects.find((p) => p.id === projectId);
 

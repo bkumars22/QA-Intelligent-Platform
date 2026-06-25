@@ -139,7 +139,6 @@ function McpServerCard({
           <div className="grid grid-cols-1 gap-3">
             {fields.map(f => {
               const val = values[f.key] ?? '';
-              const isMasked = f.secret && !editing && val && !val.startsWith('ghp_') && !val.startsWith('ATATT');
 
               return (
                 <div key={f.key}>
