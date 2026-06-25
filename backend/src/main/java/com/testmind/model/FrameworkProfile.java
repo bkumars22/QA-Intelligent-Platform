@@ -55,6 +55,9 @@ public class FrameworkProfile {
     @Column(name = "test_files_count")
     private Integer testFilesCount;
 
+    @Column(name = "github_token", length = 500)
+    private String githubToken;
+
     @Column(name = "summary_text", columnDefinition = "TEXT")
     private String summaryText;
 
@@ -105,6 +108,8 @@ public class FrameworkProfile {
     public void setPageObjectsCount(Integer pageObjectsCount) { this.pageObjectsCount = pageObjectsCount; }
     public Integer getTestFilesCount() { return testFilesCount; }
     public void setTestFilesCount(Integer testFilesCount) { this.testFilesCount = testFilesCount; }
+    public String getGithubToken() { return githubToken; }
+    public void setGithubToken(String githubToken) { this.githubToken = githubToken; }
     public String getSummaryText() { return summaryText; }
     public void setSummaryText(String summaryText) { this.summaryText = summaryText; }
     public OffsetDateTime getAnalysedAt() { return analysedAt; }

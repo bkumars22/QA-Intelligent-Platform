@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, Link2, CheckCircle2, XCircle, Play,
-  Download, Copy, ChevronDown, ChevronRight,
+  Download, Copy, ChevronDown, ChevronRight, FolderOpen,
 } from 'lucide-react';
 import { automationApi } from '../services/automationApi';
 import type { FrameworkProfile, AutomationExecution, AutomationResult } from '../services/automationApi';
+import { FrameworkExplorer } from './FrameworkExplorer';
 
 // ─── Framework type cards ─────────────────────────────────────────────────────
 type FwType = 'PLAYWRIGHT' | 'SELENIUM';
@@ -268,6 +269,7 @@ export function AutomationTab({
   const [testTitles, setTestTitles] = useState('');
   const [genProfileId, setGenProfileId] = useState<number | null>(null);
   const [showGenForm, setShowGenForm] = useState(false);
+  const [activeTab, setActiveTab] = useState<'explorer' | 'generate'>('explorer');
 
   const { data: profiles = [], isLoading: profilesLoading } = useQuery({
     queryKey: ['framework-profiles', projectId],
@@ -434,54 +436,87 @@ export function AutomationTab({
         )}
       </div>
 
-      {/* Generate code */}
+      {/* Framework explorer + AI generate — tab switcher */}
       {connectedProfile && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-              <Zap size={16} /> Generate Automation Code
-            </h3>
+        <div className="space-y-4">
+          {/* Tab switcher */}
+          <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
             <button
-              onClick={() => { setGenProfileId(connectedProfile.id); setShowGenForm(o => !o); }}
-              className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700"
+              onClick={() => setActiveTab('explorer')}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                activeTab === 'explorer' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
             >
-              + New Suite
+              <FolderOpen size={13} /> Framework Explorer
+            </button>
+            <button
+              onClick={() => { setActiveTab('generate'); setGenProfileId(connectedProfile.id); setShowGenForm(true); }}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                activeTab === 'generate' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Zap size={13} /> AI Generate New Suite
             </button>
           </div>
 
-          {showGenForm && (
-            <div className="space-y-3 mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Suite Name</label>
-                <input
-                  value={suiteName}
-                  onChange={e => setSuiteName(e.target.value)}
-                  placeholder="e.g. SCIP Authentication Suite"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Test case titles (one per line)
-                </label>
-                <textarea
-                  value={testTitles}
-                  onChange={e => setTestTitles(e.target.value)}
-                  rows={5}
-                  placeholder={"Login with valid credentials\nLogin with invalid password\nPassword reset flow"}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none font-mono"
-                />
-              </div>
-              <div className="flex gap-2">
+          {/* Framework Explorer tab */}
+          {activeTab === 'explorer' && (
+            <FrameworkExplorer
+              profile={connectedProfile}
+              onExecution={exec => qc.invalidateQueries({ queryKey: ['automation-executions', projectId] })}
+            />
+          )}
+
+          {/* AI Generate tab */}
+          {activeTab === 'generate' && (
+            <div className="bg-white border border-gray-200 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <Zap size={16} /> Generate Automation Code
+                </h3>
                 <button
-                  onClick={() => genMut.mutate()}
-                  disabled={!suiteName || !testTitles || genMut.isPending}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-60"
+                  onClick={() => { setGenProfileId(connectedProfile.id); setShowGenForm(o => !o); }}
+                  className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700"
                 >
-                  <Zap size={12} /> {genMut.isPending ? 'Generating…' : 'Generate'}
+                  + New Suite
                 </button>
-                <button onClick={() => setShowGenForm(false)} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
               </div>
+
+              {showGenForm && (
+                <div className="space-y-3 mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Suite Name</label>
+                    <input
+                      value={suiteName}
+                      onChange={e => setSuiteName(e.target.value)}
+                      placeholder="e.g. SCIP Authentication Suite"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Test case titles (one per line)
+                    </label>
+                    <textarea
+                      value={testTitles}
+                      onChange={e => setTestTitles(e.target.value)}
+                      rows={5}
+                      placeholder={"Login with valid credentials\nLogin with invalid password\nPassword reset flow"}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none font-mono"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => genMut.mutate()}
+                      disabled={!suiteName || !testTitles || genMut.isPending}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-60"
+                    >
+                      <Zap size={12} /> {genMut.isPending ? 'Generating…' : 'Generate'}
+                    </button>
+                    <button onClick={() => setShowGenForm(false)} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

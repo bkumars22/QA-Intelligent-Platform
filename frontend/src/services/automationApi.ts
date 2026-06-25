@@ -6,6 +6,8 @@ import {
   mockExecutions,
   mockResults,
   getMockExecution,
+  mockFileTrees,
+  mockFileContents,
 } from './mockData';
 
 export interface FrameworkProfile {
@@ -61,6 +63,26 @@ export interface AutomationResult {
   aiExplanation?: string;
   jiraTicketKey?: string;
   jiraTicketUrl?: string;
+}
+
+export interface FileNode {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  sha?: string;
+  parent?: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  sha: string;
+}
+
+export interface FileSaveResult {
+  committed: boolean;
+  sha: string;
+  message: string;
 }
 
 export interface ReportSummary {
@@ -185,5 +207,60 @@ export const automationApi = {
   getReports: (projectId: number): Promise<ReportSummary[]> => {
     if (isDemo()) return Promise.resolve([]);
     return api.get<ReportSummary[]>(`/automation/projects/${projectId}/reports`).then(r => r.data);
+  },
+
+  getFileTree: (profileId: number): Promise<FileNode[]> => {
+    if (isDemo()) return Promise.resolve(mockFileTrees[profileId] ?? []);
+    return api.get<FileNode[]>(`/automation/frameworks/${profileId}/file-tree`).then(r => r.data);
+  },
+
+  getFileContent: (profileId: number, path: string): Promise<FileContent> => {
+    if (isDemo()) {
+      const fc = mockFileContents[path];
+      return fc ? Promise.resolve(fc) : Promise.reject(new Error('File not found'));
+    }
+    return api.get<FileContent>(`/automation/frameworks/${profileId}/file-content`, { params: { path } }).then(r => r.data);
+  },
+
+  saveFileContent: (profileId: number, data: { path: string; content: string; sha: string; commitMessage: string }): Promise<FileSaveResult> => {
+    if (isDemo()) {
+      if (mockFileContents[data.path]) {
+        mockFileContents[data.path] = { path: data.path, content: data.content, sha: 'sha_' + Date.now() };
+      }
+      return Promise.resolve({ committed: true, sha: 'sha_' + Date.now(), message: data.commitMessage });
+    }
+    return api.put<FileSaveResult>(`/automation/frameworks/${profileId}/file-content`, data).then(r => r.data);
+  },
+
+  executeFromFramework: (profileId: number, testNames: string[], allTests: boolean): Promise<AutomationExecution> => {
+    if (isDemo()) {
+      const exec: AutomationExecution = {
+        id: Date.now(),
+        projectId: Object.values(mockFrameworks).flat().find(f => f.id === profileId)?.projectId ?? 1,
+        frameworkProfileId: profileId,
+        suiteName: allTests ? 'Execute All Framework Tests' : `Execute ${testNames.length} New Tests`,
+        frameworkType: 'PLAYWRIGHT',
+        status: 'RUNNING',
+        totalTests: allTests ? 76 : testNames.length,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        createdAt: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
+      };
+      const projectId = exec.projectId;
+      if (!mockExecutions[projectId]) mockExecutions[projectId] = [];
+      mockExecutions[projectId].unshift(exec);
+      setTimeout(() => {
+        exec.status = allTests ? 'PASSED' : 'PASSED';
+        exec.passed = allTests ? 72 : testNames.length;
+        exec.failed = allTests ? 4 : 0;
+        exec.totalTests = allTests ? 76 : testNames.length;
+        exec.completedAt = new Date().toISOString();
+        exec.durationMs = allTests ? 48200 : testNames.length * 1200;
+      }, 1500);
+      return Promise.resolve(exec);
+    }
+    return api.post<AutomationExecution>(`/automation/frameworks/${profileId}/execute`, { testNames, allTests }).then(r => r.data);
   },
 };

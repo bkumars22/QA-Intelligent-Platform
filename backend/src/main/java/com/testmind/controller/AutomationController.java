@@ -12,6 +12,10 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+// ─── DTOs used only in this controller ───────────────────────────────────────
+record FileSaveRequest(String path, String content, String sha, String commitMessage) {}
+record ExecuteFromFrameworkRequest(List<String> testNames, boolean allTests) {}
+
 @RestController
 @RequestMapping("/api/automation")
 public class AutomationController {
@@ -83,6 +87,36 @@ public class AutomationController {
                         .body(r.getHtmlContent()))
                 .orElse(ResponseEntity.notFound().build());
     }
+
+    // ─── Framework File Explorer ─────────────────────────────────────────────
+
+    @GetMapping("/frameworks/{profileId}/file-tree")
+    public ResponseEntity<List<Map<String, Object>>> getFileTree(@PathVariable Long profileId) {
+        return ResponseEntity.ok(service.getFileTree(profileId));
+    }
+
+    @GetMapping("/frameworks/{profileId}/file-content")
+    public ResponseEntity<Map<String, Object>> getFileContent(
+            @PathVariable Long profileId,
+            @RequestParam String path) {
+        return ResponseEntity.ok(service.getFileContent(profileId, path));
+    }
+
+    @PutMapping("/frameworks/{profileId}/file-content")
+    public ResponseEntity<Map<String, Object>> saveFileContent(
+            @PathVariable Long profileId,
+            @RequestBody FileSaveRequest req) {
+        return ResponseEntity.ok(service.saveFileContent(profileId, req.path(), req.content(), req.sha(), req.commitMessage()));
+    }
+
+    @PostMapping("/frameworks/{profileId}/execute")
+    public ResponseEntity<AutomationExecutionResponse> executeFromFramework(
+            @PathVariable Long profileId,
+            @RequestBody ExecuteFromFrameworkRequest req) {
+        return ResponseEntity.ok(service.executeFromFramework(profileId, req.testNames(), req.allTests()));
+    }
+
+    // ─── Reports ─────────────────────────────────────────────────────────────
 
     @GetMapping("/reports/{token}/download")
     public ResponseEntity<byte[]> downloadReport(@PathVariable String token) {

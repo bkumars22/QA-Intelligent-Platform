@@ -614,6 +614,292 @@ export function getMockExecution(id: number): AutomationExecution | undefined {
   return Object.values(mockExecutions).flat().find((e) => e.id === id);
 }
 
+// ─── Framework file explorer mock data ───────────────────────────────────────
+
+import type { FileNode, FileContent } from './automationApi';
+
+export const mockFileTrees: Record<number, FileNode[]> = {
+  1: [  // SCIP framework profile ID 1
+    { name: 'helpers', path: 'test/helpers', type: 'dir' },
+    { name: 'auth.ts', path: 'test/helpers/auth.ts', type: 'file', sha: 'sha_auth', parent: 'helpers' },
+    { name: 'login.spec.ts', path: 'test/login.spec.ts', type: 'file', sha: 'sha_login' },
+    { name: 'suppliers.spec.ts', path: 'test/suppliers.spec.ts', type: 'file', sha: 'sha_suppliers' },
+    { name: 'dashboard.spec.ts', path: 'test/dashboard.spec.ts', type: 'file', sha: 'sha_dashboard' },
+    { name: 'api.spec.ts', path: 'test/api.spec.ts', type: 'file', sha: 'sha_api' },
+    { name: 'security.spec.ts', path: 'test/security.spec.ts', type: 'file', sha: 'sha_security' },
+    { name: 'bom.spec.ts', path: 'test/bom.spec.ts', type: 'file', sha: 'sha_bom' },
+    { name: 'users.spec.ts', path: 'test/users.spec.ts', type: 'file', sha: 'sha_users' },
+    { name: 'alerts.spec.ts', path: 'test/alerts.spec.ts', type: 'file', sha: 'sha_alerts' },
+    { name: 'po-integration.spec.ts', path: 'test/po-integration.spec.ts', type: 'file', sha: 'sha_po' },
+    { name: 'master-integration.spec.ts', path: 'test/master-integration.spec.ts', type: 'file', sha: 'sha_master' },
+    { name: 'eval.spec.ts', path: 'test/eval.spec.ts', type: 'file', sha: 'sha_eval' },
+    { name: 'cost_records.spec.ts', path: 'test/cost_records.spec.ts', type: 'file', sha: 'sha_cost' },
+    { name: 'supplier-rating-integration.spec.ts', path: 'test/supplier-rating-integration.spec.ts', type: 'file', sha: 'sha_rating' },
+    { name: 'ai_insights.spec.ts', path: 'test/ai_insights.spec.ts', type: 'file', sha: 'sha_ai' },
+  ],
+  2: [  // ARIA framework profile ID 2
+    { name: 'aria.spec.ts', path: 'tests/aria.spec.ts', type: 'file', sha: 'sha_aria' },
+    { name: 'document-teacher.spec.ts', path: 'tests/document-teacher.spec.ts', type: 'file', sha: 'sha_doc' },
+    { name: 'playwright.config.ts', path: 'tests/playwright.config.ts', type: 'file', sha: 'sha_cfg' },
+  ],
+};
+
+const SCIP_LOGIN_CONTENT = `import { test, expect } from "@playwright/test";
+import { APP_URL, loginViaUI } from "./helpers/auth";
+
+test.describe("Login Page", () => {
+
+  test("login page loads correctly", async ({ page }) => {
+    await page.goto(APP_URL + "/login");
+    await expect(page).toHaveTitle(/.*/);
+  });
+
+  test("shows username and password fields", async ({ page }) => {
+    await page.goto(APP_URL + "/login");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator('input[type="password"]')).toBeVisible();
+  });
+
+  test("login with valid credentials succeeds", async ({ page }) => {
+    await page.goto(APP_URL + "/login");
+    await page.waitForLoadState("networkidle");
+    const userField = page.locator('input[type="text"], input[name="username"]').first();
+    const passField = page.locator('input[type="password"]').first();
+    await userField.fill("kumar");
+    await passField.fill("Kumar@2026");
+    await page.locator('button[type="submit"]').first().click();
+    await page.waitForURL((url) => !url.toString().includes("/login"), { timeout: 15000 });
+    expect(page.url()).not.toContain("/login");
+  });
+
+  test("login with wrong password does not grant access", async ({ page }) => {
+    await page.goto(APP_URL + "/login");
+    await page.waitForLoadState("networkidle");
+    const userField = page.locator('input[type="text"], input[name="username"]').first();
+    const passField = page.locator('input[type="password"]').first();
+    await userField.fill("kumar");
+    await passField.fill("wrongpassword123");
+    await page.locator('button[type="submit"]').first().click();
+    await page.waitForTimeout(4000);
+    expect(page.url()).toBeDefined();
+  });
+
+});`;
+
+const SCIP_SUPPLIERS_CONTENT = `import { test, expect } from "@playwright/test";
+import { APP_URL, loginViaUI } from "./helpers/auth";
+
+test.describe("Supplier list", () => {
+
+  test.beforeEach(async ({ page }) => {
+    await loginViaUI(page);
+  });
+
+  test("suppliers page loads without errors", async ({ page }) => {
+    await page.goto(APP_URL + "/suppliers");
+    await page.waitForLoadState("networkidle");
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.waitForTimeout(2000);
+    const realErrors = errors.filter(e =>
+      !e.includes("ResizeObserver") &&
+      !e.includes("Non-Error promise rejection")
+    );
+    expect(realErrors).toHaveLength(0);
+  });
+
+  test("suppliers page has visible content", async ({ page }) => {
+    await page.goto(APP_URL + "/suppliers");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("body")).toBeVisible();
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText.length).toBeGreaterThan(10);
+  });
+
+  test("suppliers page has no broken images", async ({ page }) => {
+    await page.goto(APP_URL + "/suppliers");
+    await page.waitForLoadState("networkidle");
+    const images = page.locator("img");
+    const count  = await images.count();
+    for (let i = 0; i < Math.min(count, 10); i++) {
+      const src = await images.nth(i).getAttribute("src");
+      if (src && !src.startsWith("data:")) {
+        const status = await page.evaluate(async (imgSrc) => {
+          const r = await fetch(imgSrc).catch(() => ({ status: 0 }));
+          return r.status;
+        }, src);
+        expect(status).not.toBe(404);
+      }
+    }
+  });
+
+  test("suppliers page is responsive", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(APP_URL + "/suppliers");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("body")).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
+  });
+
+});`;
+
+const SCIP_DASHBOARD_CONTENT = `import { test, expect } from "@playwright/test";
+import { APP_URL, loginViaUI } from "./helpers/auth";
+
+test.describe("Dashboard", () => {
+
+  test.beforeEach(async ({ page }) => {
+    await loginViaUI(page);
+  });
+
+  test("dashboard loads after login", async ({ page }) => {
+    await page.goto(APP_URL + "/dashboard");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("body")).toBeVisible();
+  });
+
+  test("dashboard shows KPI cards", async ({ page }) => {
+    await page.goto(APP_URL + "/dashboard");
+    await page.waitForLoadState("networkidle");
+    const body = await page.locator("body").innerText();
+    expect(body.length).toBeGreaterThan(50);
+  });
+
+  test("dashboard navigation links are present", async ({ page }) => {
+    await page.goto(APP_URL + "/dashboard");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("nav, header")).toBeVisible();
+  });
+
+});`;
+
+const ARIA_SPEC_CONTENT = `// aria.spec.ts — ARIA Playwright E2E Test Suite
+// 60 tests across 10 modules
+
+import { test, expect, Page } from '@playwright/test';
+
+const BASE_URL  = process.env.BASE_URL  || 'http://localhost:3000';
+const API_URL   = process.env.API_URL   || 'http://localhost:8089/aria';
+const AI_URL    = process.env.AI_URL    || 'http://localhost:8001';
+
+let token: string;
+let sessionId: number;
+
+async function loginAsTeacher(page: Page) {
+  const res = await page.request.post(\`\${API_URL}/api/auth/login\`, {
+    data: { username: 'teacher', password: 'Teacher@2026' }
+  });
+  const body = await res.json();
+  token = body.data?.token;
+  return token;
+}
+
+test.describe('1. Authentication', () => {
+
+  test('1.1 Login page renders with all elements', async ({ page }) => {
+    await page.goto(BASE_URL + '/login');
+    await expect(page.getByTestId('login-title')).toBeVisible();
+    await expect(page.getByTestId('username-input')).toBeVisible();
+    await expect(page.getByTestId('password-input')).toBeVisible();
+    await expect(page.getByTestId('login-btn')).toBeVisible();
+  });
+
+  test('1.2 Valid teacher login redirects to dashboard', async ({ page }) => {
+    await page.goto(BASE_URL + '/login');
+    await page.getByTestId('username-input').fill('teacher');
+    await page.getByTestId('password-input').fill('Teacher@2026');
+    await page.getByTestId('login-btn').click();
+    await expect(page).toHaveURL(/dashboard/);
+  });
+
+  test('1.3 Invalid password shows error message', async ({ page }) => {
+    await page.goto(BASE_URL + '/login');
+    await page.getByTestId('username-input').fill('teacher');
+    await page.getByTestId('password-input').fill('wrongpassword');
+    await page.getByTestId('login-btn').click();
+    await expect(page.getByTestId('login-error')).toBeVisible();
+  });
+
+});
+
+test.describe('2. Student Management', () => {
+
+  test('2.1 Student list loads on teacher dashboard', async ({ page }) => {
+    await page.goto(BASE_URL + '/dashboard');
+    await expect(page.getByTestId('student-list')).toBeVisible();
+  });
+
+  test('2.2 API: GET /students returns student array', async ({ page }) => {
+    const res = await page.request.get(\`\${API_URL}/api/students\`, {
+      headers: { Authorization: \`Bearer \${token}\` }
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBeTruthy();
+  });
+
+});`;
+
+const SCIP_AUTH_TS_CONTENT = `import { Page } from "@playwright/test";
+
+export const APP_URL  = "http://localhost:3000";
+export const API_URL  = "http://localhost:8089/supchain";
+export const USERNAME = "kumar";
+export const PASSWORD = "Kumar@2026";
+
+export async function loginViaUI(page: Page, username?: string, password?: string) {
+  await page.goto(APP_URL + "/login");
+  await page.waitForLoadState("networkidle");
+  const user = page.locator('input[type="text"], input[name="username"]').first();
+  const pass = page.locator('input[type="password"]').first();
+  await user.fill(username ?? USERNAME);
+  await pass.fill(password ?? PASSWORD);
+  await page.locator('button[type="submit"]').first().click();
+  await page.waitForURL((url) => !url.toString().includes("/login"), { timeout: 15000 });
+}`;
+
+const GENERIC_SPEC_CONTENT = (name: string) => `import { test, expect } from "@playwright/test";
+import { APP_URL, loginViaUI } from "./helpers/auth";
+
+test.describe("${name}", () => {
+
+  test.beforeEach(async ({ page }) => {
+    await loginViaUI(page);
+  });
+
+  test("${name.toLowerCase()} page loads without errors", async ({ page }) => {
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("body")).toBeVisible();
+  });
+
+  test("${name.toLowerCase()} has expected content", async ({ page }) => {
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText.length).toBeGreaterThan(10);
+  });
+
+});`;
+
+export const mockFileContents: Record<string, FileContent> = {
+  'test/login.spec.ts': { path: 'test/login.spec.ts', content: SCIP_LOGIN_CONTENT, sha: 'sha_login' },
+  'test/suppliers.spec.ts': { path: 'test/suppliers.spec.ts', content: SCIP_SUPPLIERS_CONTENT, sha: 'sha_suppliers' },
+  'test/dashboard.spec.ts': { path: 'test/dashboard.spec.ts', content: SCIP_DASHBOARD_CONTENT, sha: 'sha_dashboard' },
+  'test/helpers/auth.ts': { path: 'test/helpers/auth.ts', content: SCIP_AUTH_TS_CONTENT, sha: 'sha_auth' },
+  'test/api.spec.ts': { path: 'test/api.spec.ts', content: GENERIC_SPEC_CONTENT('API'), sha: 'sha_api' },
+  'test/security.spec.ts': { path: 'test/security.spec.ts', content: GENERIC_SPEC_CONTENT('Security'), sha: 'sha_security' },
+  'test/bom.spec.ts': { path: 'test/bom.spec.ts', content: GENERIC_SPEC_CONTENT('Bill of Materials'), sha: 'sha_bom' },
+  'test/users.spec.ts': { path: 'test/users.spec.ts', content: GENERIC_SPEC_CONTENT('Users'), sha: 'sha_users' },
+  'test/alerts.spec.ts': { path: 'test/alerts.spec.ts', content: GENERIC_SPEC_CONTENT('Alerts'), sha: 'sha_alerts' },
+  'test/po-integration.spec.ts': { path: 'test/po-integration.spec.ts', content: GENERIC_SPEC_CONTENT('Purchase Orders'), sha: 'sha_po' },
+  'test/master-integration.spec.ts': { path: 'test/master-integration.spec.ts', content: GENERIC_SPEC_CONTENT('Master Integration'), sha: 'sha_master' },
+  'test/eval.spec.ts': { path: 'test/eval.spec.ts', content: GENERIC_SPEC_CONTENT('AI Eval'), sha: 'sha_eval' },
+  'test/cost_records.spec.ts': { path: 'test/cost_records.spec.ts', content: GENERIC_SPEC_CONTENT('Cost Records'), sha: 'sha_cost' },
+  'test/supplier-rating-integration.spec.ts': { path: 'test/supplier-rating-integration.spec.ts', content: GENERIC_SPEC_CONTENT('Supplier Rating'), sha: 'sha_rating' },
+  'test/ai_insights.spec.ts': { path: 'test/ai_insights.spec.ts', content: GENERIC_SPEC_CONTENT('AI Insights'), sha: 'sha_ai' },
+  'tests/aria.spec.ts': { path: 'tests/aria.spec.ts', content: ARIA_SPEC_CONTENT, sha: 'sha_aria' },
+  'tests/document-teacher.spec.ts': { path: 'tests/document-teacher.spec.ts', content: GENERIC_SPEC_CONTENT('Document Upload (Teacher)'), sha: 'sha_doc' },
+  'tests/playwright.config.ts': { path: 'tests/playwright.config.ts', content: `import { defineConfig } from '@playwright/test';\nexport default defineConfig({\n  testDir: './tests',\n  timeout: 30000,\n  retries: 1,\n  workers: 2,\n  use: { baseURL: 'http://localhost:3000', browserName: 'chromium', headless: true },\n});\n`, sha: 'sha_cfg' },
+};
+
 // ─── Pipeline mock data ───────────────────────────────────────────────────────
 
 import type {

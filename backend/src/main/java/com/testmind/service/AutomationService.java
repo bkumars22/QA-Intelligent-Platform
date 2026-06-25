@@ -13,8 +13,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class AutomationService {
@@ -28,6 +35,7 @@ public class AutomationService {
     private final AutomationAiClient aiClient;
     private final SimpMessagingTemplate ws;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final HttpClient http = HttpClient.newBuilder().build();
 
     public AutomationService(
             FrameworkProfileRepository frameworkRepo,
@@ -65,6 +73,9 @@ public class AutomationService {
         profile.setBranch(req.getBranch() != null ? req.getBranch() : "main");
         profile.setStatus(FrameworkConnectionStatus.ANALYSING);
         profile.setErrorMessage(null);
+        if (req.getGithubToken() != null && !req.getGithubToken().isBlank()) {
+            profile.setGithubToken(req.getGithubToken());
+        }
         profile = frameworkRepo.save(profile);
 
         analyseFrameworkAsync(profile.getId(), req.getRepoUrl(), req.getBranch(), req.getGithubToken(), type);
@@ -345,5 +356,133 @@ public class AutomationService {
         if (o == null) return null;
         if (o instanceof String s) return s;
         try { return mapper.writeValueAsString(o); } catch (Exception e) { return o.toString(); }
+    }
+
+    // ─── Framework File Explorer ──────────────────────────────────────────────
+
+    public List<Map<String, Object>> getFileTree(Long profileId) {
+        FrameworkProfile fp = frameworkRepo.findById(profileId).orElseThrow();
+        String[] ownerRepo = parseGitHubUrl(fp.getRepoUrl());
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String testDir : List.of("test", "tests")) {
+            try {
+                List<Map<String, Object>> entries = githubListDir(ownerRepo, testDir, fp.getBranch(), fp.getGithubToken());
+                for (Map<String, Object> e : entries) {
+                    Map<String, Object> node = new LinkedHashMap<>(e);
+                    result.add(node);
+                    if ("dir".equals(e.get("type"))) {
+                        try {
+                            List<Map<String, Object>> children = githubListDir(ownerRepo, (String) e.get("path"), fp.getBranch(), fp.getGithubToken());
+                            children.forEach(c -> { Map<String, Object> child = new LinkedHashMap<>(c); child.put("parent", e.get("name")); result.add(child); });
+                        } catch (Exception ignored) {}
+                    }
+                }
+                break;
+            } catch (Exception ignored) {}
+        }
+        return result;
+    }
+
+    public Map<String, Object> getFileContent(Long profileId, String path) {
+        FrameworkProfile fp = frameworkRepo.findById(profileId).orElseThrow();
+        String[] ownerRepo = parseGitHubUrl(fp.getRepoUrl());
+        try {
+            String url = "https://api.github.com/repos/" + ownerRepo[0] + "/" + ownerRepo[1]
+                    + "/contents/" + path + "?ref=" + fp.getBranch();
+            HttpRequest.Builder rb = HttpRequest.newBuilder().uri(URI.create(url))
+                    .header("Accept", "application/vnd.github+json").header("X-GitHub-Api-Version", "2022-11-28");
+            if (fp.getGithubToken() != null) rb.header("Authorization", "Bearer " + fp.getGithubToken());
+            HttpResponse<String> resp = http.send(rb.GET().build(), HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() >= 400) throw new RuntimeException("GitHub error " + resp.statusCode());
+            @SuppressWarnings("unchecked") Map<String, Object> data = mapper.readValue(resp.body(), Map.class);
+            String b64 = ((String) data.get("content")).replaceAll("\\s", "");
+            String content = new String(Base64.getDecoder().decode(b64), StandardCharsets.UTF_8);
+            return Map.of("path", path, "content", content, "sha", data.getOrDefault("sha", ""));
+        } catch (Exception e) { throw new RuntimeException("Cannot fetch file: " + e.getMessage()); }
+    }
+
+    public Map<String, Object> saveFileContent(Long profileId, String path, String content, String sha, String commitMessage) {
+        FrameworkProfile fp = frameworkRepo.findById(profileId).orElseThrow();
+        String[] ownerRepo = parseGitHubUrl(fp.getRepoUrl());
+        try {
+            String url = "https://api.github.com/repos/" + ownerRepo[0] + "/" + ownerRepo[1] + "/contents/" + path;
+            String b64 = Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8));
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("message", commitMessage != null ? commitMessage : "feat: update tests via QAIP");
+            body.put("content", b64);
+            body.put("branch", fp.getBranch());
+            if (sha != null && !sha.isBlank()) body.put("sha", sha);
+            String bodyJson = mapper.writeValueAsString(body);
+            HttpRequest.Builder rb = HttpRequest.newBuilder().uri(URI.create(url))
+                    .header("Accept", "application/vnd.github+json")
+                    .header("Content-Type", "application/json")
+                    .header("X-GitHub-Api-Version", "2022-11-28");
+            if (fp.getGithubToken() != null) rb.header("Authorization", "Bearer " + fp.getGithubToken());
+            HttpResponse<String> resp = http.send(rb.PUT(HttpRequest.BodyPublishers.ofString(bodyJson)).build(), HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() >= 400) throw new RuntimeException("GitHub save error " + resp.statusCode() + ": " + resp.body());
+            @SuppressWarnings("unchecked") Map<String, Object> result = mapper.readValue(resp.body(), Map.class);
+            @SuppressWarnings("unchecked") Map<String, Object> contentObj = (Map<String, Object>) result.get("content");
+            return Map.of("committed", true, "sha", contentObj != null ? contentObj.getOrDefault("sha", "") : "", "message", commitMessage != null ? commitMessage : "");
+        } catch (Exception e) { throw new RuntimeException("Cannot save file: " + e.getMessage()); }
+    }
+
+    public AutomationExecutionResponse executeFromFramework(Long profileId, List<String> testNames, boolean allTests) {
+        FrameworkProfile fp = frameworkRepo.findById(profileId).orElseThrow();
+        List<String> titles = allTests ? resolveAllTestTitles(profileId) : testNames;
+        GenerateAutomationRequest req = new GenerateAutomationRequest();
+        req.setProjectId(fp.getProjectId());
+        req.setFrameworkProfileId(profileId);
+        req.setSuiteName(allTests ? "Execute All — " + fp.getRepoUrl().replaceAll(".*/", "") : "Execute New — " + titles.size() + " tests");
+        req.setTestCaseTitles(titles);
+        AutomationExecutionResponse exec = generateAutomationCode(req);
+        return startExecution(exec.getId(), null);
+    }
+
+    private List<String> resolveAllTestTitles(Long profileId) {
+        try {
+            List<Map<String, Object>> tree = getFileTree(profileId);
+            List<String> titles = new ArrayList<>();
+            Pattern p = Pattern.compile("test\\s*\\(\\s*['\"`](.+?)['\"`]");
+            for (Map<String, Object> node : tree) {
+                String name = (String) node.get("name");
+                String type = (String) node.get("type");
+                if ("file".equals(type) && name != null && name.endsWith(".spec.ts")) {
+                    try {
+                        Map<String, Object> fc = getFileContent(profileId, (String) node.get("path"));
+                        Matcher m = p.matcher((String) fc.get("content"));
+                        while (m.find()) titles.add(m.group(1));
+                    } catch (Exception ignored) {}
+                }
+            }
+            return titles.isEmpty() ? List.of("All tests") : titles;
+        } catch (Exception e) { return List.of("All tests"); }
+    }
+
+    private String[] parseGitHubUrl(String repoUrl) {
+        String path = repoUrl.replaceFirst("https?://github\\.com/", "").replaceAll("\\.git$", "").replaceAll("/$", "");
+        String[] parts = path.split("/", 2);
+        return parts.length == 2 ? parts : new String[]{"unknown", "unknown"};
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> githubListDir(String[] ownerRepo, String dirPath, String branch, String token) throws Exception {
+        String url = "https://api.github.com/repos/" + ownerRepo[0] + "/" + ownerRepo[1]
+                + "/contents/" + dirPath + "?ref=" + branch;
+        HttpRequest.Builder rb = HttpRequest.newBuilder().uri(URI.create(url))
+                .header("Accept", "application/vnd.github+json").header("X-GitHub-Api-Version", "2022-11-28");
+        if (token != null && !token.isBlank()) rb.header("Authorization", "Bearer " + token);
+        HttpResponse<String> resp = http.send(rb.GET().build(), HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() >= 400) throw new RuntimeException("GitHub error " + resp.statusCode());
+        List<Map<String, Object>> raw = mapper.readValue(resp.body(), List.class);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> f : raw) {
+            Map<String, Object> node = new LinkedHashMap<>();
+            node.put("name", f.get("name"));
+            node.put("path", f.get("path"));
+            node.put("type", "dir".equals(f.get("type")) ? "dir" : "file");
+            node.put("sha", f.getOrDefault("sha", ""));
+            result.add(node);
+        }
+        return result;
     }
 }
