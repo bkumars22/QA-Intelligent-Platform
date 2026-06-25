@@ -10,26 +10,27 @@
     "test": "playwright test"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
+    "@tanstack/react-query": "^5.45.1",
+    "axios": "^1.7.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.396.0",
+    "prismjs": "^1.29.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.1",
-    "axios": "^1.7.2",
-    "@tanstack/react-query": "^5.45.1",
-    "recharts": "^2.12.7",
-    "prismjs": "^1.29.0",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.396.0"
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.44.1",
+    "@types/prismjs": "^1.26.4",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@types/prismjs": "^1.26.4",
     "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.4.5",
-    "vite": "^5.3.1",
-    "tailwindcss": "^3.4.4",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",
-    "@playwright/test": "^1.44.1"
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.1"
   }
 }

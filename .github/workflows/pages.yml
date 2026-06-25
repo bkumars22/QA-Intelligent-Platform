@@ -30,6 +30,9 @@ jobs:
           GITHUB_PAGES: 'true'
           VITE_API_URL: https://testmind-production.up.railway.app
           VITE_WS_URL: wss://testmind-production.up.railway.app
+          VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
+          VITE_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_EMAILJS_TEMPLATE_ID }}
+          VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
         run: npm run build
 
       - name: Add .nojekyll

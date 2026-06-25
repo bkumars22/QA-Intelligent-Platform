@@ -9,6 +9,7 @@ import {
   triggerAnalysis,
   isDemoMode,
 } from '../services/api';
+import { logSecurityEvent, sanitizeInput, recordAction } from '../services/securityMonitor';
 import { McpStatusDot } from '../components/McpStatusDot';
 import { StatusBadge } from '../components/StatusBadge';
 import type { Project, McpServerType, McpStatus } from '../types';
@@ -85,9 +86,17 @@ function ProjectCard({ project, onAnalyze, analyzing }: ProjectCardProps) {
         </button>
 
         <button
-          disabled
-          title="Delete is disabled in demo mode"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 text-sm font-medium rounded-lg border border-gray-200 cursor-not-allowed opacity-50"
+          onClick={() => {
+            recordAction();
+            logSecurityEvent(
+              'DELETE_ATTEMPT',
+              `Delete attempted on project "${project.name}" (id=${project.id}) — blocked by demo guard`,
+              project.id
+            );
+          }}
+          aria-disabled="true"
+          title="Delete is disabled — security event logged"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 text-sm font-medium rounded-lg border border-gray-200 cursor-not-allowed opacity-50 select-none"
         >
           <Trash2 size={15} />
           Delete
@@ -110,7 +119,12 @@ function NewProjectForm({ onClose, onCreate, loading }: NewProjectFormProps) {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    onCreate({ name, repoUrl, githubToken });
+    recordAction();
+    onCreate({
+      name: sanitizeInput(name, 'Project Name'),
+      repoUrl: sanitizeInput(repoUrl, 'GitHub Repo URL'),
+      githubToken: githubToken.trim(),
+    });
   };
 
   return (
@@ -216,9 +230,16 @@ export function ProjectsPage() {
           <p className="text-sm text-gray-500 mt-1">Manage your repositories and test analysis</p>
         </div>
         <button
-          onClick={() => !demoMode && setShowForm(true)}
+          onClick={() => {
+            recordAction();
+            if (demoMode) {
+              logSecurityEvent('CREATE_ATTEMPT', 'User attempted to open New Project form in demo mode');
+              return;
+            }
+            setShowForm(true);
+          }}
           disabled={demoMode}
-          title={demoMode ? 'New projects are disabled in demo mode' : undefined}
+          title={demoMode ? 'New projects are disabled in demo mode — security event logged' : undefined}
           className={`flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
             demoMode
               ? 'bg-gray-300 cursor-not-allowed opacity-60'

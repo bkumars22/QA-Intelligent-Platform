@@ -6,9 +6,11 @@ import {
   LogOut,
   Brain,
   Workflow,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import { getSecurityLog } from '../services/securityMonitor';
 
 interface NavItem {
   to: string;
@@ -21,6 +23,30 @@ const navItems: NavItem[] = [
   { to: '/projects', label: 'Projects', icon: <FolderKanban size={18} /> },
   { to: '/pipeline', label: 'QA Pipeline', icon: <Workflow size={18} /> },
 ];
+
+function SecurityShield() {
+  const today = new Date().toDateString();
+  const todayEvents = getSecurityLog().filter(
+    e => new Date(e.timestamp).toDateString() === today
+  ).length;
+
+  return (
+    <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={13} className="text-green-400 shrink-0" />
+        <span className="text-xs font-semibold text-green-400">Security Shield Active</span>
+        {todayEvents > 0 && (
+          <span className="ml-auto text-[10px] font-bold bg-amber-500 text-white px-1.5 py-0.5 rounded-full">
+            {todayEvents}
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] text-slate-500 mt-0.5">
+        All actions monitored · Alerts → swamy.kumar02@gmail.com
+      </p>
+    </div>
+  );
+}
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -65,6 +91,9 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* Security shield badge */}
+        <SecurityShield />
 
         {/* User info + logout */}
         <div className="px-4 py-4 border-t border-slate-700">

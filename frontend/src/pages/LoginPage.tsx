@@ -1,8 +1,15 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, AlertCircle, Wifi, WifiOff, Loader } from 'lucide-react';
+import { Brain, AlertCircle, Wifi, WifiOff, Loader, ShieldAlert } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
+import {
+  recordLoginFailure,
+  clearLoginFailures,
+  getLoginFailCount,
+  sanitizeInput,
+  recordAction,
+} from '../services/securityMonitor';
 
 type BackendStatus = 'checking' | 'online' | 'offline';
 
@@ -35,13 +42,32 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
+  const [lockedOut, setLockedOut] = useState(() => getLoginFailCount() >= 5);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const { login, demoLogin } = useAuth();
   const navigate = useNavigate();
 
-  // Ping the backend on mount so the user sees live status before trying to log in
   useEffect(() => {
     pingBackend().then((ok) => setBackendStatus(ok ? 'online' : 'offline'));
   }, []);
+
+  // Countdown for lockout display
+  useEffect(() => {
+    if (!lockedOut) return;
+    setLockoutSeconds(30);
+    const interval = setInterval(() => {
+      setLockoutSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setLockedOut(false);
+          clearLoginFailures();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockedOut]);
 
   const handleDemo = () => {
     demoLogin();
@@ -50,29 +76,43 @@ export function LoginPage() {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (lockedOut) return;
+
+    recordAction();
     setError(null);
     setLoading(true);
 
-    // Only the plain shorthand 'admin' / 'admin' triggers instant demo
-    // Every real email address always goes to the backend
-    const trimmedEmail = email.trim();
-    if (trimmedEmail === 'admin' && password === 'admin') {
+    const trimmedEmail = sanitizeInput(email.trim(), 'email');
+    const trimmedPassword = password;
+
+    if (trimmedEmail === 'admin' && trimmedPassword === 'admin') {
+      clearLoginFailures();
       demoLogin();
       navigate('/dashboard');
       return;
     }
 
     try {
-      await login(trimmedEmail, password);
+      await login(trimmedEmail, trimmedPassword);
+      clearLoginFailures();
       navigate('/dashboard');
     } catch (err: unknown) {
-      if (isNetworkFailure(err)) {
+      const { shouldLockout, failCount } = recordLoginFailure();
+      if (shouldLockout) {
+        setLockedOut(true);
+        setError(null);
+      } else if (isNetworkFailure(err)) {
         setError(
           'Cannot reach the backend. Use "Enter as Demo Admin" to explore the platform, ' +
           'or contact the administrator to check Railway deployment.'
         );
       } else {
-        setError('Invalid email or password. Please try again.');
+        const remaining = 5 - failCount;
+        setError(
+          remaining > 0
+            ? `Invalid email or password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining before lockout.`
+            : 'Invalid email or password. Please try again.'
+        );
       }
     } finally {
       setLoading(false);
@@ -165,6 +205,19 @@ export function LoginPage() {
             <div className="flex-1 h-px bg-gray-200" />
           </div>
 
+          {lockedOut && (
+            <div className="mt-5 flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-300">
+              <ShieldAlert size={20} className="text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-red-800">Account temporarily locked</p>
+                <p className="text-xs text-red-600 mt-1">
+                  Too many failed attempts. The security team has been alerted.
+                  Try again in {lockoutSeconds}s.
+                </p>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="mt-5 space-y-5">
             {error && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700">
@@ -207,7 +260,7 @@ export function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || lockedOut}
               className="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-500 disabled:opacity-60 text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
             >
               {loading ? (
