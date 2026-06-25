@@ -68,6 +68,7 @@ export interface McpStatus {
   serverType: McpServerType;
   isActive: boolean;
   lastChecked: string;
+  config?: Record<string, string>;
 }
 
 export interface DashboardStats {

@@ -175,18 +175,48 @@ export const mockRiskScores: Record<number, RiskScore[]> = {
 
 export const mockMcpStatus: Record<number, McpStatus[]> = {
   1: [
-    { serverType: 'PLAYWRIGHT', isActive: true, lastChecked: '2026-06-20T08:00:00Z' },
-    { serverType: 'GITHUB', isActive: true, lastChecked: '2026-06-20T08:00:00Z' },
-    { serverType: 'FILESYSTEM', isActive: true, lastChecked: '2026-06-20T08:00:00Z' },
-    { serverType: 'JIRA', isActive: true, lastChecked: '2026-06-20T08:00:00Z' },
-    { serverType: 'SLACK', isActive: false, lastChecked: '2026-06-20T08:00:00Z' },
+    {
+      serverType: 'PLAYWRIGHT', isActive: true, lastChecked: '2026-06-20T08:00:00Z',
+      config: { baseUrl: 'https://bkumars22.github.io/SupplyChainPlatformProject', headless: 'true', timeout: '30000', workers: '2', retries: '1' },
+    },
+    {
+      serverType: 'GITHUB', isActive: true, lastChecked: '2026-06-20T08:00:00Z',
+      config: { repoUrl: 'https://github.com/bkumars22/SupplyChainPlatformProject', branch: 'main', githubToken: 'ghp_••••••••••••••••••••' },
+    },
+    {
+      serverType: 'FILESYSTEM', isActive: true, lastChecked: '2026-06-20T08:00:00Z',
+      config: { rootPath: '/workspace/SupplyChainPlatformProject', allowedExtensions: '.ts,.java,.py,.sql', excludePaths: 'node_modules,target,.git' },
+    },
+    {
+      serverType: 'JIRA', isActive: true, lastChecked: '2026-06-20T08:00:00Z',
+      config: { jiraBaseUrl: 'https://bkumars22.atlassian.net', jiraProject: 'SCIP', jiraToken: 'ATATT3x••••••••••••' },
+    },
+    {
+      serverType: 'SLACK', isActive: false, lastChecked: '2026-06-20T08:00:00Z',
+      config: { slackWebhookUrl: '', slackChannel: '#qa-alerts', notifyOnFailure: 'true' },
+    },
   ],
   2: [
-    { serverType: 'PLAYWRIGHT', isActive: true, lastChecked: '2026-06-21T10:00:00Z' },
-    { serverType: 'GITHUB', isActive: true, lastChecked: '2026-06-21T10:00:00Z' },
-    { serverType: 'FILESYSTEM', isActive: true, lastChecked: '2026-06-21T10:00:00Z' },
-    { serverType: 'JIRA', isActive: true, lastChecked: '2026-06-21T10:00:00Z' },
-    { serverType: 'SLACK', isActive: true, lastChecked: '2026-06-21T10:00:00Z' },
+    {
+      serverType: 'PLAYWRIGHT', isActive: true, lastChecked: '2026-06-21T10:00:00Z',
+      config: { baseUrl: 'https://bkumars22.github.io/ARIA', headless: 'true', timeout: '30000', workers: '2', retries: '1' },
+    },
+    {
+      serverType: 'GITHUB', isActive: true, lastChecked: '2026-06-21T10:00:00Z',
+      config: { repoUrl: 'https://github.com/bkumars22/ARIA', branch: 'main', githubToken: 'ghp_••••••••••••••••••••' },
+    },
+    {
+      serverType: 'FILESYSTEM', isActive: true, lastChecked: '2026-06-21T10:00:00Z',
+      config: { rootPath: '/workspace/ARIA', allowedExtensions: '.ts,.java,.py,.jsx,.tsx', excludePaths: 'node_modules,target,.git' },
+    },
+    {
+      serverType: 'JIRA', isActive: true, lastChecked: '2026-06-21T10:00:00Z',
+      config: { jiraBaseUrl: 'https://bkumars22.atlassian.net', jiraProject: 'ARIA', jiraToken: 'ATATT3x••••••••••••' },
+    },
+    {
+      serverType: 'SLACK', isActive: true, lastChecked: '2026-06-21T10:00:00Z',
+      config: { slackWebhookUrl: 'https://hooks.slack.com/services/T0••••/B0••••/••••••', slackChannel: '#aria-alerts', notifyOnFailure: 'true' },
+    },
   ],
 };
 

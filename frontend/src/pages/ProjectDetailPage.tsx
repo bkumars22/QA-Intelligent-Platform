@@ -10,19 +10,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { ArrowLeft, Settings } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import {
   getProjects,
   getTestRuns,
   getDefects,
   getRiskScores,
   getMcpStatus,
-  configureMcp,
 } from '../services/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { SeverityBadge } from '../components/SeverityBadge';
-import { McpStatusDot } from '../components/McpStatusDot';
 import { AutomationTab } from '../components/AutomationTab';
+import { McpConfigPanel } from '../components/McpConfigPanel';
 import type {
   TestRun,
   Defect,
@@ -30,7 +29,6 @@ import type {
   McpStatus,
   DefectSeverity,
   DefectStatus,
-  McpServerType,
 } from '../types';
 
 type Tab = 'overview' | 'test-runs' | 'defects' | 'coverage-gaps' | 'mcp-status' | 'automation';
@@ -43,8 +41,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'automation', label: '⚡ Automation' },
   { id: 'mcp-status', label: 'MCP Status' },
 ];
-
-const MCP_TYPES: McpServerType[] = ['PLAYWRIGHT', 'GITHUB', 'FILESYSTEM', 'JIRA', 'SLACK'];
 
 function durationStr(run: TestRun): string {
   if (!run.completedAt) return '—';
@@ -92,14 +88,6 @@ export function ProjectDetailPage() {
     queryFn: () => getMcpStatus(projectId),
     enabled: !!projectId,
     refetchInterval: 60_000,
-  });
-
-  const configureMutation = useMutation({
-    mutationFn: (data: { serverType: McpServerType; config: Record<string, string> }) =>
-      configureMcp(projectId, data),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['mcp-status', projectId] });
-    },
   });
 
   // Build risk trend from test runs
@@ -350,42 +338,7 @@ export function ProjectDetailPage() {
 
       {/* Tab: MCP Status */}
       {activeTab === 'mcp-status' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MCP_TYPES.map((type) => {
-            const status = mcpStatuses.find((s) => s.serverType === type);
-            return (
-              <div key={type} className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-gray-900">{type}</h3>
-                  <McpStatusDot type={type} isActive={status?.isActive ?? false} />
-                </div>
-                <p className="text-xs text-gray-400">
-                  {status
-                    ? `Last checked: ${new Date(status.lastChecked).toLocaleTimeString()}`
-                    : 'Never checked'}
-                </p>
-                <div className="mt-4">
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                      status?.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}
-                  >
-                    {status?.isActive ? 'Connected' : 'Disconnected'}
-                  </span>
-                </div>
-                <button
-                  onClick={() =>
-                    configureMutation.mutate({ serverType: type, config: {} })
-                  }
-                  className="flex items-center gap-1.5 mt-3 text-xs text-gray-500 hover:text-gray-700 transition-colors"
-                >
-                  <Settings size={13} />
-                  Configure
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <McpConfigPanel statuses={mcpStatuses} projectId={projectId} />
       )}
     </div>
   );
