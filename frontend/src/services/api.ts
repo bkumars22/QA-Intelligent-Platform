@@ -42,6 +42,10 @@ function isDemo(): boolean {
   return _token === DEMO_TOKEN;
 }
 
+export function isDemoMode(): boolean {
+  return _token === DEMO_TOKEN;
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api',
   headers: { 'Content-Type': 'application/json' },
@@ -89,25 +93,14 @@ export async function createProject(payload: {
   githubToken: string;
 }): Promise<Project> {
   if (isDemo()) {
-    const newProject: Project = {
-      id: Date.now(),
-      name: payload.name,
-      repoUrl: payload.repoUrl,
-      techStack: '',
-      status: 'ACTIVE',
-      githubToken: payload.githubToken,
-      createdAt: new Date().toISOString(),
-      activeTestRun: false,
-    };
-    mockProjects.push(newProject);
-    return Promise.resolve(newProject);
+    return Promise.reject(new Error('Project creation is disabled in demo mode'));
   }
   const { data } = await api.post<Project>('/projects', payload);
   return data;
 }
 
 export async function deleteProject(id: number): Promise<void> {
-  if (isDemo()) return Promise.resolve();
+  if (isDemo()) return Promise.reject(new Error('Delete is disabled in demo mode'));
   await api.delete(`/projects/${id}`);
 }
 
@@ -117,7 +110,30 @@ export async function connectRepo(id: number, token: string): Promise<void> {
 }
 
 export async function triggerAnalysis(id: number): Promise<{ runId: number }> {
-  if (isDemo()) return Promise.resolve({ runId: id * 100 });
+  if (isDemo()) {
+    const proj = mockProjects.find(p => p.id === id);
+    if (proj) proj.activeTestRun = true;
+
+    await new Promise(r => setTimeout(r, 3000));
+
+    const runId = Date.now();
+    const defectCount = Math.floor(Math.random() * 4);
+    const newRun: TestRun = {
+      id: runId,
+      projectId: id,
+      status: 'COMPLETED',
+      triggeredBy: 'demo@qaip.io',
+      startedAt: new Date(Date.now() - 3100).toISOString(),
+      completedAt: new Date().toISOString(),
+      defectCount,
+      riskScore: Math.round((Math.random() * 0.45 + 0.2) * 1000) / 1000,
+    };
+    if (!mockTestRuns[id]) mockTestRuns[id] = [];
+    mockTestRuns[id].unshift(newRun);
+
+    if (proj) proj.activeTestRun = false;
+    return { runId };
+  }
   const { data } = await api.post<{ runId: number }>(`/projects/${id}/analyze`);
   return data;
 }

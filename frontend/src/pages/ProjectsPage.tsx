@@ -5,9 +5,9 @@ import { Plus, Trash2, PlayCircle, ExternalLink, X } from 'lucide-react';
 import {
   getProjects,
   createProject,
-  deleteProject,
   getMcpStatus,
   triggerAnalysis,
+  isDemoMode,
 } from '../services/api';
 import { McpStatusDot } from '../components/McpStatusDot';
 import { StatusBadge } from '../components/StatusBadge';
@@ -17,14 +17,11 @@ const MCP_TYPES: McpServerType[] = ['PLAYWRIGHT', 'GITHUB', 'FILESYSTEM', 'JIRA'
 
 interface ProjectCardProps {
   project: Project;
-  onDelete: (id: number) => void;
   onAnalyze: (id: number) => void;
   analyzing: boolean;
 }
 
-function ProjectCard({ project, onDelete, onAnalyze, analyzing }: ProjectCardProps) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
+function ProjectCard({ project, onAnalyze, analyzing }: ProjectCardProps) {
   const { data: mcpStatuses = [] } = useQuery<McpStatus[]>({
     queryKey: ['mcp-status', project.id],
     queryFn: () => getMcpStatus(project.id),
@@ -87,31 +84,14 @@ function ProjectCard({ project, onDelete, onAnalyze, analyzing }: ProjectCardPro
           Run Analysis
         </button>
 
-        {!confirmDelete ? (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg transition-colors border border-red-200"
-          >
-            <Trash2 size={15} />
-            Delete
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-600">Are you sure?</span>
-            <button
-              onClick={() => { onDelete(project.id); setConfirmDelete(false); }}
-              className="px-2 py-1 bg-red-600 text-white text-xs rounded font-medium"
-            >
-              Yes, delete
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              className="px-2 py-1 text-gray-500 text-xs rounded font-medium hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+        <button
+          disabled
+          title="Delete is disabled in demo mode"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 text-sm font-medium rounded-lg border border-gray-200 cursor-not-allowed opacity-50"
+        >
+          <Trash2 size={15} />
+          Delete
+        </button>
       </div>
     </div>
   );
@@ -200,6 +180,7 @@ export function ProjectsPage() {
   const [showForm, setShowForm] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const queryClient = useQueryClient();
+  const demoMode = isDemoMode();
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
@@ -214,18 +195,14 @@ export function ProjectsPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['projects'] });
-    },
-  });
-
   const handleAnalyze = async (id: number) => {
     setAnalyzingId(id);
     try {
-      await triggerAnalysis(id);
+      const promise = triggerAnalysis(id);
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      await promise;
+      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void queryClient.invalidateQueries({ queryKey: ['test-runs', id] });
     } finally {
       setAnalyzingId(null);
     }
@@ -239,15 +216,28 @@ export function ProjectsPage() {
           <p className="text-sm text-gray-500 mt-1">Manage your repositories and test analysis</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
+          onClick={() => !demoMode && setShowForm(true)}
+          disabled={demoMode}
+          title={demoMode ? 'New projects are disabled in demo mode' : undefined}
+          className={`flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
+            demoMode
+              ? 'bg-gray-300 cursor-not-allowed opacity-60'
+              : 'bg-brand-600 hover:bg-brand-700'
+          }`}
         >
           <Plus size={16} />
           New Project
         </button>
       </div>
 
-      {showForm && (
+      {demoMode && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <span className="font-semibold">Demo mode:</span>
+          <span>You can explore all features. Create, delete, and data changes are restricted to protect the showcase projects.</span>
+        </div>
+      )}
+
+      {!demoMode && showForm && (
         <NewProjectForm
           onClose={() => setShowForm(false)}
           onCreate={(data) => createMutation.mutate(data)}
@@ -273,7 +263,6 @@ export function ProjectsPage() {
             <ProjectCard
               key={project.id}
               project={project}
-              onDelete={(id) => deleteMutation.mutate(id)}
               onAnalyze={handleAnalyze}
               analyzing={analyzingId === project.id}
             />
