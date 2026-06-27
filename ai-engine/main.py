@@ -25,8 +25,20 @@ from pydantic import BaseModel, Field
 from groq import Groq
 
 from agents.langgraph_agent import build_graph, AgentState
+from model_router import get_router, ModelTier
+from cost_tracker import record as track_cost, dashboard as cost_dashboard
+from quality_validator import (
+    validate_defect_explanation,
+    validate_generated_tests,
+    validate_unified_report,
+    validate,
+    QUALITY_THRESHOLD,
+)
 
 load_dotenv()
+
+# Shared router instance for this service
+_router = get_router("QAIP")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -336,13 +348,38 @@ class FailureExplainRequest(BaseModel):
     error_message: str = ""
 
 
-def _groq_call(system: str, user: str, max_tokens: int = 2048) -> str:
+def _groq_call(
+    system: str,
+    user: str,
+    max_tokens: int = 2048,
+    task_type: str | None = None,
+    urgent: bool = False,
+) -> str:
+    """
+    Unified Groq call with ModelRouter + CostTracker wired in.
+    Automatically selects the cheapest model that can handle the task.
+    """
+    decision    = _router.route(task_type=task_type, prompt=user, urgent=urgent)
+    model_id    = decision.model_spec.model_id
     groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+    t0 = time.monotonic()
     resp = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=model_id,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.2,
         max_tokens=max_tokens,
+    )
+    latency_ms = int((time.monotonic() - t0) * 1000)
+
+    usage = resp.usage
+    track_cost(
+        project="QAIP",
+        task_type=task_type or "auto",
+        model_id=model_id,
+        prompt_tokens=usage.prompt_tokens if usage else 0,
+        completion_tokens=usage.completion_tokens if usage else 0,
+        latency_ms=latency_ms,
     )
     return resp.choices[0].message.content.strip()
 
@@ -901,6 +938,87 @@ async def rag_query(payload: RagQueryRequest):
     except Exception as exc:
         logger.warning("RAG query failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Level 4 — Cost Dashboard  (GAP 2)
+# ---------------------------------------------------------------------------
+
+@app.get("/cost/dashboard")
+async def get_cost_dashboard():
+    """
+    Real-time cost dashboard showing AI spend, savings vs baseline,
+    and per-model/per-task breakdown across all QAIP calls.
+    """
+    return cost_dashboard(project="QAIP")
+
+
+@app.get("/cost/router-summary")
+async def get_router_summary():
+    """Session-level model routing decisions and cost breakdown."""
+    return _router.session_summary()
+
+
+# ---------------------------------------------------------------------------
+# Level 4 — AI Quality Validation  (GAP 3)
+# ---------------------------------------------------------------------------
+
+class QualityRequest(BaseModel):
+    response:          str
+    task_type:         str   = "generic"
+    question:          str   = ""
+    context:           str   = ""
+    required_sections: list[str] = []
+    expected_format:   str   = ""
+    min_words:         int   = 20
+
+
+@app.post("/quality/validate")
+async def quality_validate(payload: QualityRequest):
+    """
+    Validate any AI response for completeness, relevance, hallucination,
+    structure, and length. Returns score 0–1 and pass/fail against threshold.
+    """
+    result = validate(
+        response=payload.response,
+        task_type=payload.task_type,
+        question=payload.question,
+        context=payload.context,
+        required_sections=payload.required_sections,
+        expected_format=payload.expected_format,
+        min_words=payload.min_words,
+    )
+    return result.as_dict()
+
+
+@app.get("/quality/threshold")
+async def get_quality_threshold():
+    """Return the current CI quality gate threshold."""
+    return {"threshold": QUALITY_THRESHOLD, "description": "Minimum AI output quality score for CI to pass"}
+
+
+# ---------------------------------------------------------------------------
+# Level 4 — Model Registry  (GAP 6)
+# ---------------------------------------------------------------------------
+
+@app.get("/models/registry")
+async def get_model_registry():
+    """Return the full model registry with costs, tiers, and routing rules."""
+    from model_router import MODEL_REGISTRY, TASK_TIER_MAP
+    return {
+        "models": {
+            tier.value: {
+                "model_id": spec.model_id,
+                "provider": spec.provider,
+                "cost_per_1m_input":  spec.cost_per_1m_input,
+                "cost_per_1m_output": spec.cost_per_1m_output,
+                "max_tokens": spec.max_tokens,
+                "avg_latency_ms": spec.avg_latency_ms,
+            }
+            for tier, spec in MODEL_REGISTRY.items()
+        },
+        "task_routing": {task: tier.value for task, tier in TASK_TIER_MAP.items()},
+    }
 
 
 @app.post("/rag/ingest-jira")
