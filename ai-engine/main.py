@@ -403,6 +403,70 @@ async def get_pipeline_nodes():
     return {"nodes": PIPELINE_NODES}
 
 
+# ---------------------------------------------------------------------------
+# SHAP — risk score explanations (Prompt 5)
+# ---------------------------------------------------------------------------
+
+@app.get("/risk/explain/{run_id}")
+async def risk_explain(run_id: str):
+    """
+    Return risk scores with SHAP explanations for a completed run.
+
+    Each entry includes:
+      file_path, score, anomaly_flag, features,
+      shap_values  — per-feature contribution (positive = increases risk),
+      shap_top     — top 3 drivers [{feature, label, value}],
+      shap_sentence — plain-English summary,
+      shap_method  — 'shap_tree_explainer' | 'approximation'
+    """
+    record = run_store.get(run_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Run ID '{run_id}' not found.")
+    risk_scores = record.get("risk_scores", [])
+    return {
+        "run_id":      run_id,
+        "status":      record.get("status"),
+        "risk_scores": risk_scores,
+        "count":       len(risk_scores),
+        "top_file":    risk_scores[0]["file_path"] if risk_scores else None,
+        "top_shap_sentence": risk_scores[0].get("shap_sentence", "") if risk_scores else "",
+    }
+
+
+@app.post("/risk/explain/adhoc")
+async def risk_explain_adhoc(payload: AnalyzeRequest):
+    """
+    Run just the score_risk node on a repo's latest changed files and return
+    SHAP explanations immediately — no full pipeline run needed.
+    """
+    from agents.langgraph_agent import fetch_codebase, score_risk, AgentState as AS
+    run_id = f"adhoc-{str(uuid.uuid4())[:8]}"
+    state: AS = {
+        "run_id": run_id, "project_id": payload.project_id,
+        "repo_url": payload.repo_url, "github_token": payload.github_token,
+        "commit_sha": payload.commit_sha,
+        "file_list": [], "risk_scores": [], "coverage_gaps": [],
+        "rag_context": [], "generated_tests": [], "defects": [],
+        "explained_defects": [], "dispatch_results": {},
+        "error": "", "status": "SCORING",
+    }
+    loop = asyncio.get_running_loop()
+
+    def _run():
+        s = fetch_codebase(state)
+        if s.get("error"):
+            return s
+        return score_risk(s)
+
+    final = await loop.run_in_executor(_executor, _run)
+    return {
+        "run_id":      run_id,
+        "file_count":  len(final.get("file_list", [])),
+        "risk_scores": final.get("risk_scores", []),
+        "error":       final.get("error", ""),
+    }
+
+
 @app.post("/explain", response_model=ExplainResponse)
 async def explain_defect(payload: ExplainRequest):
     groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))

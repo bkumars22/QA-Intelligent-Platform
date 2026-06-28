@@ -13,6 +13,8 @@ import { getDashboardStats, getProjects, getTestRuns, getDefects, getRiskHeatmap
 import { StatusBadge } from '../components/StatusBadge';
 import { SeverityBadge } from '../components/SeverityBadge';
 import type { DashboardStats, RiskScore, TestRun, Defect, DefectSeverity } from '../types';
+import RiskExplainPanel from '../components/RiskExplainPanel';
+import type { RiskScoreEntry } from '../components/RiskExplainPanel';
 
 interface StatCardProps {
   title: string;
@@ -152,31 +154,19 @@ export function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Risk Heatmap */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">Risk Heatmap (Top Files)</h2>
-          {sortedRisk.length === 0 ? (
-            <p className="text-sm text-gray-400">No risk data available</p>
-          ) : (
-            <div className="space-y-3">
-              {sortedRisk.map((rs) => (
-                <div key={rs.id}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span
-                      className="text-xs text-gray-600 truncate max-w-[70%] font-mono"
-                      title={rs.filePath}
-                    >
-                      {rs.filePath.split('/').pop()}
-                    </span>
-                    {rs.anomalyFlag && (
-                      <span className="text-xs text-red-600 font-semibold">ANOMALY</span>
-                    )}
-                  </div>
-                  <RiskBar score={rs.riskScore} />
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Risk Heatmap + SHAP Explanations */}
+        <div className="bg-slate-900 rounded-xl border border-slate-700 p-6">
+          <h2 className="text-base font-semibold text-white mb-1">Risk Heatmap</h2>
+          <p className="text-xs text-slate-500 mb-4">Click a file to see SHAP feature attribution</p>
+          <RiskExplainPanel
+            riskScores={sortedRisk.map((rs): RiskScoreEntry => ({
+              file_path:    rs.filePath,
+              score:        rs.riskScore,
+              anomaly_flag: rs.anomalyFlag,
+              features:     {},
+            }))}
+            maxShow={8}
+          />
         </div>
 
         {/* Defect severity donut */}

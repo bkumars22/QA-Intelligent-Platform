@@ -25,3 +25,6 @@ langsmith>=0.1.0
 
 # LangGraph PostgreSQL checkpointing (Prompt 2)
 langgraph-checkpoint-postgres>=2.0.0
+
+# SHAP explainability for IsolationForest risk scores (Prompt 5)
+shap>=0.45.0

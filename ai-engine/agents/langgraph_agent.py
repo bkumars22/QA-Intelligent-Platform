@@ -30,6 +30,7 @@ from langgraph.graph import END, StateGraph
 from sklearn.ensemble import IsolationForest
 
 from langsmith_utils import trace_node
+from risk_explainer import explain as shap_explain
 
 logger = logging.getLogger("testmind.agent")
 
@@ -212,6 +213,9 @@ def score_risk(state: AgentState) -> AgentState:
         else:
             normalized = np.zeros_like(raw_scores)
 
+        # SHAP explainability — one call covers all files
+        shap_explanations = shap_explain(clf, feature_matrix, normalized)
+
         risk_scores: list[dict] = []
         for i, f in enumerate(file_list):
             risk_scores.append(
@@ -227,6 +231,7 @@ def score_risk(state: AgentState) -> AgentState:
                         "has_auth_code": bool(feature_matrix[i][4]),
                         "has_db_code": bool(feature_matrix[i][5]),
                     },
+                    **shap_explanations[i],   # shap_values, shap_top, shap_sentence, shap_method
                 }
             )
 
