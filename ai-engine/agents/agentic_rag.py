@@ -22,6 +22,7 @@ from langgraph.graph import StateGraph, END
 from langsmith_utils import trace_node
 from rag.retriever import query as rag_query
 from rag.embedder import embed
+from rag import ragas_eval, eval_store
 
 logger = logging.getLogger("qaip.agentic_rag")
 
@@ -363,11 +364,15 @@ def get_rag_graph():
 
 
 def ask(
-    question: str,
-    project_id: int,
-    source_type: str | None = None,
+    question:     str,
+    project_id:   int,
+    source_type:  str | None = None,
+    run_eval:     bool = True,
 ) -> dict:
-    """Public entry point — run the agentic RAG and return structured result."""
+    """Public entry point — run the agentic RAG and return structured result.
+
+    run_eval=True: run RAGAS evaluation after generation and persist to DB.
+    """
     initial: RAGState = {
         "question":        question,
         "project_id":      project_id,
@@ -387,21 +392,56 @@ def ask(
     try:
         graph = get_rag_graph()
         final: RAGState = graph.invoke(initial)
-        return {
-            "answer":      final["answer"],
-            "sources":     final["sources"],
-            "sub_queries": final["sub_queries"],
-            "hops":        final["hop_count"],
-            "is_grounded": final["is_grounded"],
-            "trace":       final["trace"],
-        }
     except Exception as exc:
         logger.exception("Agentic RAG failed: %s", exc)
         return {
-            "answer":      f"RAG pipeline error: {exc}",
-            "sources":     [],
-            "sub_queries": [question],
-            "hops":        0,
-            "is_grounded": False,
-            "trace":       [],
+            "answer":       f"RAG pipeline error: {exc}",
+            "sources":      [],
+            "sub_queries":  [question],
+            "hops":         0,
+            "is_grounded":  False,
+            "trace":        [],
+            "ragas_metrics": None,
         }
+
+    # RAGAS evaluation (Prompt 7) ─────────────────────────────────────────────
+    ragas_metrics: dict | None = None
+    if run_eval and final.get("answer"):
+        try:
+            contexts = [
+                d["content"]
+                for d in final.get("graded_docs", [])
+                if d.get("relevance") == "yes"
+            ]
+            if not contexts:
+                contexts = [d["content"] for d in final.get("retrieved_docs", [])[:4]]
+
+            ragas_metrics = ragas_eval.evaluate(
+                question=question,
+                answer=final["answer"],
+                contexts=contexts,
+            )
+            # Persist to DB (best-effort — don't fail the response on store errors)
+            try:
+                eval_store.ensure_schema()
+                eval_store.save_eval(
+                    project_id=project_id,
+                    question=question,
+                    answer=final["answer"],
+                    metrics=ragas_metrics,
+                    is_grounded=final.get("is_grounded", True),
+                )
+            except Exception as db_exc:
+                logger.warning("eval_store.save_eval failed (non-fatal): %s", db_exc)
+        except Exception as eval_exc:
+            logger.warning("RAGAS eval failed (non-fatal): %s", eval_exc)
+
+    return {
+        "answer":        final["answer"],
+        "sources":       final["sources"],
+        "sub_queries":   final["sub_queries"],
+        "hops":          final["hop_count"],
+        "is_grounded":   final["is_grounded"],
+        "trace":         final["trace"],
+        "ragas_metrics": ragas_metrics,
+    }

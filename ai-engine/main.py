@@ -1236,6 +1236,80 @@ async def rag_ask(payload: AgenticRAGRequest):
     return result
 
 
+# ─── RAGAS Evaluation endpoints (Prompt 7) ───────────────────────────────────
+
+class AdhocEvalRequest(BaseModel):
+    question:     str       = Field(..., description="The question asked")
+    answer:       str       = Field(..., description="The RAG-generated answer")
+    contexts:     list[str] = Field(..., description="Retrieved context chunks used to generate the answer")
+    ground_truth: str | None = Field(None, description="Optional reference answer for context_recall")
+    project_id:   int | None = Field(None, description="If set, result is persisted to DB")
+
+
+@app.post("/rag/eval/adhoc")
+async def rag_eval_adhoc(payload: AdhocEvalRequest):
+    """
+    Run RAGAS evaluation on any (question, answer, contexts) triple.
+    Optionally persist results when project_id is provided.
+
+    Metrics returned:
+      faithfulness       — claims in answer supported by context (0-1)
+      answer_relevancy   — how well answer addresses the question (0-1)
+      context_precision  — fraction of context chunks actually useful (0-1)
+      context_recall     — fraction of ground-truth in context (-1 = not computed)
+      overall            — mean of available metrics
+    """
+    from rag import ragas_eval, eval_store
+    loop = asyncio.get_running_loop()
+    metrics = await loop.run_in_executor(
+        _executor,
+        lambda: ragas_eval.evaluate(
+            question=payload.question,
+            answer=payload.answer,
+            contexts=payload.contexts,
+            ground_truth=payload.ground_truth,
+        ),
+    )
+    if payload.project_id:
+        try:
+            eval_store.ensure_schema()
+            eval_store.save_eval(
+                project_id=payload.project_id,
+                question=payload.question,
+                answer=payload.answer,
+                metrics=metrics,
+            )
+        except Exception as exc:
+            logger.warning("adhoc eval persist failed: %s", exc)
+    return metrics
+
+
+@app.get("/rag/eval/results")
+async def rag_eval_results(project_id: int, limit: int = 20):
+    """Return the most recent RAGAS evaluation results for a project."""
+    from rag import eval_store
+    loop = asyncio.get_running_loop()
+    rows = await loop.run_in_executor(
+        _executor,
+        lambda: eval_store.get_recent_evals(project_id=project_id, limit=min(limit, 100)),
+    )
+    return {"project_id": project_id, "count": len(rows), "results": rows}
+
+
+@app.get("/rag/eval/stats")
+async def rag_eval_stats(project_id: int, days: int = 30):
+    """Return aggregated RAGAS metric statistics over the last N days."""
+    from rag import eval_store
+    loop = asyncio.get_running_loop()
+    stats = await loop.run_in_executor(
+        _executor,
+        lambda: eval_store.get_aggregate_stats(project_id=project_id, days=days),
+    )
+    if not stats:
+        return {"project_id": project_id, "message": "No eval results yet — run /rag/ask first.", "stats": {}}
+    return {"project_id": project_id, "days_window": days, "stats": stats}
+
+
 @app.post("/rag/ingest")
 async def rag_ingest(payload: RagIngestRequest):
     """Ingest a document directly into the QAIP RAG store."""

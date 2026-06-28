@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Search, ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { RAGASBadge } from './RAGASMetricsPanel'
 
 const AI_ENGINE = import.meta.env.VITE_AI_ENGINE_URL ?? 'http://localhost:8001'
 
@@ -25,12 +26,13 @@ interface TraceNode {
 }
 
 interface RAGResult {
-  answer:      string
-  sources:     Source[]
-  sub_queries: string[]
-  hops:        number
-  is_grounded: boolean
-  trace:       TraceNode[]
+  answer:        string
+  sources:       Source[]
+  sub_queries:   string[]
+  hops:          number
+  is_grounded:   boolean
+  trace:         TraceNode[]
+  ragas_metrics: Record<string, number> | null
 }
 
 interface Message {
@@ -279,6 +281,11 @@ export default function AgenticRAGChat({ projectId }: Props) {
                                 <SourceCard key={src.index} src={src} />
                               ))}
                             </div>
+                          )}
+
+                          {/* RAGAS quality badges */}
+                          {msg.result.ragas_metrics && (
+                            <RAGASBadge metrics={msg.result.ragas_metrics} />
                           )}
 
                           {/* Retrieval trace */}
