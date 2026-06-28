@@ -29,6 +29,8 @@ from groq import Groq
 from langgraph.graph import END, StateGraph
 from sklearn.ensemble import IsolationForest
 
+from langsmith_utils import trace_node
+
 logger = logging.getLogger("testmind.agent")
 
 # ---------------------------------------------------------------------------
@@ -177,6 +179,7 @@ def _extract_features(file_info: dict) -> list[float]:
     ]
 
 
+@trace_node("score_risk")
 def score_risk(state: AgentState) -> AgentState:
     state["status"] = "SCORING_RISK"
     logger.info("[%s] score_risk started", state["run_id"])
@@ -361,6 +364,7 @@ _SYSTEM_GENERATE = (
 )
 
 
+@trace_node("generate_tests")
 def generate_tests(state: AgentState) -> AgentState:
     state["status"] = "GENERATING_TESTS"
     logger.info("[%s] generate_tests started", state["run_id"])
@@ -623,6 +627,7 @@ def _consistency_score(explanation: str) -> float:
     return round(sum(0.2 for s in _EXPLAIN_SECTIONS if s in lower), 2)
 
 
+@trace_node("explain_and_score")
 def explain_and_score(state: AgentState) -> AgentState:
     state["status"] = "EXPLAINING_DEFECTS"
     logger.info("[%s] explain_and_score started", state["run_id"])
@@ -877,6 +882,7 @@ def _callback_backend(state: AgentState) -> dict:
         return {"backend": f"failed: {exc}"}
 
 
+@trace_node("dispatch_results")
 def dispatch_results(state: AgentState) -> AgentState:
     state["status"] = "DISPATCHING"
     logger.info("[%s] dispatch_results started", state["run_id"])
