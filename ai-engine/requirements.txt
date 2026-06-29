@@ -37,3 +37,11 @@ pyyaml>=6.0.1
 
 # Zep long-term session memory (Prompt 10)
 zep-cloud>=2.0.0
+
+# OpenTelemetry distributed tracing + metrics (Prompt 11)
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-instrumentation-fastapi>=0.41b0
+opentelemetry-instrumentation-httpx>=0.41b0
+# Optional: uncomment when connecting to Jaeger / Grafana Tempo
+# opentelemetry-exporter-otlp-proto-grpc>=1.20.0

@@ -9,6 +9,7 @@ import AgenticRAGChat from '../components/AgenticRAGChat';
 import HybridSearchPanel from '../components/HybridSearchPanel';
 import RAGASMetricsPanel from '../components/RAGASMetricsPanel';
 import MemoryPanel from '../components/MemoryPanel';
+import TraceViewerPanel from '../components/TraceViewerPanel';
 
 // ─── Single project card ──────────────────────────────────────────────────────
 function ProjectCard({ project, accent }: { project: Project; accent: string }) {
@@ -230,6 +231,12 @@ export function UnifiedDashboardPage() {
       <section>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">RAG Quality Evaluation</h2>
         <RAGASMetricsPanel projectId={projects[0]?.id ?? 1} />
+      </section>
+
+      {/* OpenTelemetry trace viewer */}
+      <section>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Distributed Traces</h2>
+        <TraceViewerPanel />
       </section>
 
       {/* Loading skeleton */}

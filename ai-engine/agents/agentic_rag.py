@@ -24,6 +24,9 @@ from rag.retriever import query as rag_query
 from rag.embedder import embed
 from rag import ragas_eval, eval_store
 from memory.zep_client import get_client as get_memory
+from telemetry.otel_setup import get_tracer, record_rag, record_ragas
+
+_tracer = get_tracer("qaip.agentic_rag")
 
 logger = logging.getLogger("qaip.agentic_rag")
 
@@ -81,7 +84,11 @@ def plan_queries(state: RAGState) -> RAGState:
     logger.info("[RAG] plan_queries: %s", state["question"])
     state["trace"].append({"node": "plan_queries", "ts": time.time()})
 
-    prompt = f"""You are a search query planner for a QA knowledge base.
+    with _tracer.start_as_current_span("rag.plan_queries") as span:
+        span.set_attribute("question_length", len(state["question"]))
+        span.set_attribute("project_id", state["project_id"])
+
+        prompt = f"""You are a search query planner for a QA knowledge base.
 The knowledge base contains: test cases, defect reports, Jira stories, run results.
 
 Question: {state["question"]}
@@ -89,16 +96,18 @@ Question: {state["question"]}
 Break this into 1-3 specific search queries that will retrieve the most useful documents.
 Return ONLY a JSON array of strings. Example: ["query 1", "query 2"]"""
 
-    try:
-        raw = _llm("Return only valid JSON.", prompt, model=_FAST_MODEL, max_tokens=200)
-        # Extract JSON array
-        import re
-        m = re.search(r"\[.*?\]", raw, re.DOTALL)
-        queries = json.loads(m.group() if m else f'["{state["question"]}"]')
-        state["sub_queries"] = [q for q in queries if isinstance(q, str)][:3]
-    except Exception as exc:
-        logger.warning("[RAG] plan_queries fallback: %s", exc)
-        state["sub_queries"] = [state["question"]]
+        try:
+            raw = _llm("Return only valid JSON.", prompt, model=_FAST_MODEL, max_tokens=200)
+            import re
+            m = re.search(r"\[.*?\]", raw, re.DOTALL)
+            queries = json.loads(m.group() if m else f'["{state["question"]}"]')
+            state["sub_queries"] = [q for q in queries if isinstance(q, str)][:3]
+        except Exception as exc:
+            logger.warning("[RAG] plan_queries fallback: %s", exc)
+            state["sub_queries"] = [state["question"]]
+
+        span.set_attribute("sub_queries_count", len(state["sub_queries"]))
+        span.set_attribute("sub_queries", str(state["sub_queries"]))
 
     state["trace"][-1]["sub_queries"] = state["sub_queries"]
     return state
@@ -114,28 +123,36 @@ def retrieve(state: RAGState) -> RAGState:
     logger.info("[RAG] retrieve: hop=%d, queries=%s", state["hop_count"], state["sub_queries"])
     state["trace"].append({"node": "retrieve", "ts": time.time(), "hop": state["hop_count"]})
 
-    seen_hashes: set[int] = {hash(d["content"]) for d in state.get("retrieved_docs", [])}
-    new_docs: list[dict] = []
+    with _tracer.start_as_current_span("rag.retrieve") as span:
+        span.set_attribute("hop", state["hop_count"])
+        span.set_attribute("source_type", state.get("source_type") or "all")
 
-    active_queries = [state["rewritten_query"]] if state["rewritten_query"] else state["sub_queries"]
+        seen_hashes: set[int] = {hash(d["content"]) for d in state.get("retrieved_docs", [])}
+        new_docs: list[dict] = []
 
-    for q in active_queries:
-        try:
-            results = rag_query(
-                project_id=state["project_id"],
-                question=q,
-                top_k=4,
-                source_type=state.get("source_type"),
-            )
-            for doc in results:
-                h = hash(doc["content"])
-                if h not in seen_hashes:
-                    seen_hashes.add(h)
-                    new_docs.append({**doc, "query_used": q})
-        except Exception as exc:
-            logger.warning("[RAG] retrieve sub-query failed: %s", exc)
+        active_queries = [state["rewritten_query"]] if state["rewritten_query"] else state["sub_queries"]
+        span.set_attribute("queries_count", len(active_queries))
 
-    state["retrieved_docs"] = (state.get("retrieved_docs") or []) + new_docs
+        for q in active_queries:
+            try:
+                results = rag_query(
+                    project_id=state["project_id"],
+                    question=q,
+                    top_k=4,
+                    source_type=state.get("source_type"),
+                )
+                for doc in results:
+                    h = hash(doc["content"])
+                    if h not in seen_hashes:
+                        seen_hashes.add(h)
+                        new_docs.append({**doc, "query_used": q})
+            except Exception as exc:
+                logger.warning("[RAG] retrieve sub-query failed: %s", exc)
+
+        state["retrieved_docs"] = (state.get("retrieved_docs") or []) + new_docs
+        span.set_attribute("new_docs", len(new_docs))
+        span.set_attribute("total_docs", len(state["retrieved_docs"]))
+
     state["trace"][-1]["new_docs_count"] = len(new_docs)
     return state
 
@@ -150,29 +167,34 @@ def grade_docs(state: RAGState) -> RAGState:
     logger.info("[RAG] grade_docs: %d docs", len(state["retrieved_docs"]))
     state["trace"].append({"node": "grade_docs", "ts": time.time()})
 
-    graded: list[dict] = []
-    question = state["question"]
+    with _tracer.start_as_current_span("rag.grade_docs") as span:
+        span.set_attribute("docs_to_grade", len(state["retrieved_docs"]))
+        graded: list[dict] = []
+        question = state["question"]
 
-    for doc in state["retrieved_docs"]:
-        content_preview = doc["content"][:400]
-        prompt = f"""Is this document relevant to the question?
+        for doc in state["retrieved_docs"]:
+            content_preview = doc["content"][:400]
+            prompt = f"""Is this document relevant to the question?
 
 Question: {question}
 Document: {content_preview}
 
 Answer with JSON only: {{"relevant": "yes"}} or {{"relevant": "no"}}"""
-        try:
-            raw = _llm("Return only valid JSON.", prompt, model=_FAST_MODEL, max_tokens=20)
-            import re
-            m = re.search(r'\{"relevant":\s*"(yes|no)"\}', raw)
-            relevance = m.group(1) if m else "no"
-        except Exception:
-            relevance = "no"
+            try:
+                raw = _llm("Return only valid JSON.", prompt, model=_FAST_MODEL, max_tokens=20)
+                import re
+                m = re.search(r'\{"relevant":\s*"(yes|no)"\}', raw)
+                relevance = m.group(1) if m else "no"
+            except Exception:
+                relevance = "no"
 
-        graded.append({**doc, "relevance": relevance})
+            graded.append({**doc, "relevance": relevance})
 
-    state["graded_docs"] = graded
-    relevant_count = sum(1 for d in graded if d["relevance"] == "yes")
+        state["graded_docs"] = graded
+        relevant_count = sum(1 for d in graded if d["relevance"] == "yes")
+        span.set_attribute("relevant_count",   relevant_count)
+        span.set_attribute("irrelevant_count", len(graded) - relevant_count)
+
     state["trace"][-1]["relevant_count"] = relevant_count
     return state
 
@@ -201,14 +223,16 @@ def rewrite_query(state: RAGState) -> RAGState:
     state["hop_count"] += 1
     state["trace"].append({"node": "rewrite_query", "ts": time.time(), "hop": state["hop_count"]})
 
-    context_hints = ""
-    if state["graded_docs"]:
-        # Give the rewriter a hint about what was retrieved but wasn't relevant
-        irrelevant_samples = [d["content"][:150] for d in state["graded_docs"] if d["relevance"] == "no"][:2]
-        if irrelevant_samples:
-            context_hints = "\nPreviously retrieved (not relevant):\n" + "\n".join(irrelevant_samples)
+    with _tracer.start_as_current_span("rag.rewrite_query") as span:
+        span.set_attribute("hop", state["hop_count"])
 
-    prompt = f"""The original question did not retrieve enough relevant documents.
+        context_hints = ""
+        if state["graded_docs"]:
+            irrelevant_samples = [d["content"][:150] for d in state["graded_docs"] if d["relevance"] == "no"][:2]
+            if irrelevant_samples:
+                context_hints = "\nPreviously retrieved (not relevant):\n" + "\n".join(irrelevant_samples)
+
+        prompt = f"""The original question did not retrieve enough relevant documents.
 
 Original question: {state["question"]}
 {context_hints}
@@ -216,12 +240,14 @@ Original question: {state["question"]}
 Rewrite the question to be more specific and likely to match QA knowledge-base documents
 (test cases, defects, Jira stories). Return ONLY the rewritten query string."""
 
-    try:
-        rewritten = _llm("You are a search query optimizer.", prompt, model=_FAST_MODEL, max_tokens=100)
-        state["rewritten_query"] = rewritten.strip('"').strip()
-    except Exception as exc:
-        logger.warning("[RAG] rewrite_query failed: %s", exc)
-        state["rewritten_query"] = state["question"]
+        try:
+            rewritten = _llm("You are a search query optimizer.", prompt, model=_FAST_MODEL, max_tokens=100)
+            state["rewritten_query"] = rewritten.strip('"').strip()
+        except Exception as exc:
+            logger.warning("[RAG] rewrite_query failed: %s", exc)
+            state["rewritten_query"] = state["question"]
+
+        span.set_attribute("rewritten_query", state["rewritten_query"][:200])
 
     state["trace"][-1]["rewritten_to"] = state["rewritten_query"]
     return state
@@ -281,11 +307,17 @@ Sources:
 
 Provide a clear, concise answer citing the relevant sources."""
 
-    try:
-        state["generation"] = _llm(system, user, model=_SMART_MODEL, max_tokens=1024)
-    except Exception as exc:
-        logger.warning("[RAG] generate LLM failed: %s", exc)
-        state["generation"] = f"Answer generation failed: {exc}"
+    with _tracer.start_as_current_span("rag.generate") as span:
+        span.set_attribute("sources_count",        len(sources))
+        span.set_attribute("context_length",       len(context))
+        span.set_attribute("memory_context_used",  bool(state.get("memory_context")))
+        try:
+            state["generation"] = _llm(system, user, model=_SMART_MODEL, max_tokens=1024)
+        except Exception as exc:
+            logger.warning("[RAG] generate LLM failed: %s", exc)
+            state["generation"] = f"Answer generation failed: {exc}"
+            span.set_attribute("error", str(exc))
+        span.set_attribute("answer_length", len(state["generation"]))
 
     state["sources"] = sources
     return state
@@ -327,6 +359,9 @@ Return JSON only: {{"grounded": true}} or {{"grounded": false}}"""
         state["is_grounded"] = True   # assume grounded on failure
 
     # Append grounding status to answer
+    with _tracer.start_as_current_span("rag.check_grounding") as span:
+        span.set_attribute("is_grounded", state["is_grounded"])
+
     grounding_note = "" if state["is_grounded"] else "\n\n⚠️ Note: This answer may contain information not directly in the retrieved sources."
     state["answer"] = state["generation"] + grounding_note
     state["trace"][-1]["is_grounded"] = state["is_grounded"]
@@ -388,6 +423,19 @@ def ask(
                 to Zep after a successful answer.
     run_eval=True: run RAGAS evaluation after generation and persist to DB.
     """
+    _t_start = time.time()
+
+    # ── Parent OTel span for the entire RAG pipeline ──────────────────────────
+    _pipeline_span = _tracer.start_as_current_span("rag.pipeline")
+    _pipeline_span.__enter__()
+    try:
+        _pipeline_span.set_attribute("project_id",   project_id)
+        _pipeline_span.set_attribute("source_type",  source_type or "all")
+        _pipeline_span.set_attribute("session_id",   session_id or "")
+        _pipeline_span.set_attribute("memory_enabled", bool(session_id))
+    except Exception:
+        pass
+
     # ── Retrieve Zep memory context (best-effort) ─────────────────────────────
     memory_context = ""
     if session_id:
@@ -420,6 +468,8 @@ def ask(
         final: RAGState = graph.invoke(initial)
     except Exception as exc:
         logger.exception("Agentic RAG failed: %s", exc)
+        _pipeline_span.__exit__(type(exc), exc, exc.__traceback__)
+        record_rag(latency_ms=(time.time() - _t_start) * 1000, hops=0, blocked=False)
         return {
             "answer":       f"RAG pipeline error: {exc}",
             "sources":      [],
@@ -473,6 +523,20 @@ def ask(
             logger.debug("[zep] persisted Q&A to session=%s", session_id)
         except Exception as mem_exc:
             logger.warning("[zep] add_messages failed (non-fatal): %s", mem_exc)
+
+    # Close the pipeline span and record metrics
+    try:
+        _pipeline_span.set_attribute("hop_count",   final.get("hop_count", 0))
+        _pipeline_span.set_attribute("is_grounded", final.get("is_grounded", True))
+        _pipeline_span.set_attribute("sources_count", len(final.get("sources", [])))
+    except Exception:
+        pass
+    _pipeline_span.__exit__(None, None, None)
+
+    _latency_ms = (time.time() - _t_start) * 1000
+    record_rag(latency_ms=_latency_ms, hops=final.get("hop_count", 0), blocked=False)
+    if ragas_metrics:
+        record_ragas(ragas_metrics)
 
     from memory.zep_client import get_backend_name
     return {

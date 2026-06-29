@@ -41,6 +41,14 @@ from quality_validator import (
     QUALITY_THRESHOLD,
 )
 import stream_bus
+from telemetry.otel_setup import (
+    instrument_fastapi,
+    get_recent_traces,
+    get_metrics_snapshot,
+    record_guardrail,
+    record_memory_op,
+    record_analyze,
+)
 
 load_dotenv()
 
@@ -94,6 +102,7 @@ app = FastAPI(
 @app.on_event("startup")
 async def _startup():
     stream_bus.set_loop(asyncio.get_running_loop())
+    instrument_fastapi(app)   # OTel FastAPI auto-instrumentation (Prompt 11)
 
 
 app.add_middleware(
@@ -196,6 +205,42 @@ def _run_agent(run_id: str, initial_state: AgentState) -> None:
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": "llama-3.3-70b-versatile"}
+
+
+# ─── OpenTelemetry observability endpoints (Prompt 11) ───────────────────────
+
+@app.get("/telemetry/traces")
+async def telemetry_traces(limit: int = 20):
+    """
+    Return the most recent traces collected by the in-process InMemorySpanExporter.
+    Each trace includes root op, duration, status, and a per-span waterfall list.
+    limit: max traces to return (default 20, max 100).
+    """
+    limit = min(limit, 100)
+    traces = await asyncio.get_running_loop().run_in_executor(
+        _executor, lambda: get_recent_traces(limit)
+    )
+    return {"count": len(traces), "traces": traces}
+
+
+@app.get("/telemetry/metrics")
+async def telemetry_metrics():
+    """
+    Return in-process metric counters and derived KPIs:
+    rag (requests, blocked, avg_latency, avg_hops), guardrails, memory, ragas, analyze.
+    """
+    return get_metrics_snapshot()
+
+
+@app.get("/telemetry/health")
+async def telemetry_health():
+    """OTel readiness check — returns backend type and OTLP endpoint if configured."""
+    from telemetry.otel_setup import _OTEL_AVAILABLE, _OTLP_ENDPOINT
+    return {
+        "otel_available": _OTEL_AVAILABLE,
+        "otlp_endpoint":  _OTLP_ENDPOINT or None,
+        "in_memory":      True,
+    }
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -1245,6 +1290,7 @@ async def rag_ask(payload: AgenticRAGRequest):
         _executor,
         lambda: engine.check_input(payload.question),
     )
+    record_guardrail(blocked=not input_result.passed)
     if not input_result.passed:
         logger.warning(
             "[guardrails] input blocked — rail=%s score=%.2f",
