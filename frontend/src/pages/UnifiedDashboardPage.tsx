@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Play, ExternalLink, CheckCircle, AlertCircle, Clock, Zap } from 'lucide-react';
@@ -8,6 +8,7 @@ import type { Project } from '../types';
 import AgenticRAGChat from '../components/AgenticRAGChat';
 import HybridSearchPanel from '../components/HybridSearchPanel';
 import RAGASMetricsPanel from '../components/RAGASMetricsPanel';
+import MemoryPanel from '../components/MemoryPanel';
 
 // ─── Single project card ──────────────────────────────────────────────────────
 function ProjectCard({ project, accent }: { project: Project; accent: string }) {
@@ -114,6 +115,14 @@ export function UnifiedDashboardPage() {
     refetchInterval: 30_000,
   });
 
+  // Stable session ID shared between AgenticRAGChat and MemoryPanel
+  const sessionIdRef = useRef<string>(
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  )
+  const sessionId = sessionIdRef.current;
+
   const scip = projects.find(p => p.repoUrl?.includes('SupplyChainPlatformProject'));
   const aria = projects.find(p => p.repoUrl?.includes('ARIA'));
   const others = projects.filter(p => p !== scip && p !== aria);
@@ -198,11 +207,16 @@ export function UnifiedDashboardPage() {
         </div>
       )}
 
-      {/* Agentic RAG knowledge chat */}
+      {/* Agentic RAG knowledge chat + Memory panel side-by-side */}
       <section>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">QA Knowledge Search</h2>
-        <div className="h-[520px]">
-          <AgenticRAGChat projectId={projects[0]?.id ?? 1} />
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <div className="xl:col-span-2 h-[520px]">
+            <AgenticRAGChat projectId={projects[0]?.id ?? 1} sessionId={sessionId} />
+          </div>
+          <div className="xl:col-span-1">
+            <MemoryPanel sessionId={sessionId} />
+          </div>
         </div>
       </section>
 

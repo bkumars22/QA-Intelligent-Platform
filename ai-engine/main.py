@@ -1217,6 +1217,7 @@ class AgenticRAGRequest(BaseModel):
     question:    str  = Field(..., description="Natural-language question")
     project_id:  int  = Field(..., description="QAIP project ID")
     source_type: str | None = Field(None, description="Filter: test_case | defect | jira_story | run_result")
+    session_id:  str | None = Field(None, description="Zep memory session ID — omit to disable memory")
 
 
 @app.post("/rag/ask")
@@ -1267,6 +1268,7 @@ async def rag_ask(payload: AgenticRAGRequest):
             question=payload.question,
             project_id=payload.project_id,
             source_type=payload.source_type,
+            session_id=payload.session_id,
         ),
     )
 
@@ -1408,6 +1410,64 @@ async def guardrails_check(payload: dict):
     else:
         result = await loop.run_in_executor(_executor, lambda: engine.check_input(text))
     return result.to_dict()
+
+
+# ─── Zep Memory endpoints (Prompt 10) ────────────────────────────────────────
+
+@app.get("/memory/backend")
+async def memory_backend():
+    """Return which memory backend is active (zep_cloud or in_memory)."""
+    from memory.zep_client import get_backend_name, get_client
+    return {"backend": get_backend_name(), "zep_configured": bool(os.getenv("ZEP_API_KEY"))}
+
+
+@app.post("/memory/session/{session_id}")
+async def memory_ensure_session(session_id: str, user_id: str | None = None):
+    """Create or verify a Zep session.  Idempotent."""
+    from memory.zep_client import get_client
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(_executor, lambda: get_client().ensure_session(session_id, user_id))
+    return {"session_id": session_id, "status": "ok"}
+
+
+@app.get("/memory/session/{session_id}")
+async def memory_get_session(session_id: str):
+    """Return memory context and recent messages for a session."""
+    from memory.zep_client import get_client, get_backend_name
+    loop = asyncio.get_running_loop()
+    ctx  = await loop.run_in_executor(_executor, lambda: get_client().get_context(session_id))
+    info_fn = getattr(get_client(), "session_info", None)
+    info = {}
+    if info_fn:
+        info = await loop.run_in_executor(_executor, lambda: info_fn(session_id))
+    return {
+        "session_id": session_id,
+        "backend":    get_backend_name(),
+        **ctx,
+        **info,
+    }
+
+
+@app.post("/memory/session/{session_id}/search")
+async def memory_search(session_id: str, payload: dict):
+    """Semantic / keyword search over a session's message history.
+    Body: {"query": "...", "top_k": 5}
+    """
+    from memory.zep_client import get_client
+    query  = payload.get("query", "")
+    top_k  = int(payload.get("top_k", 5))
+    loop   = asyncio.get_running_loop()
+    hits   = await loop.run_in_executor(_executor, lambda: get_client().search(session_id, query, top_k))
+    return {"session_id": session_id, "query": query, "count": len(hits), "results": hits}
+
+
+@app.delete("/memory/session/{session_id}")
+async def memory_delete_session(session_id: str):
+    """Clear all memory for a session."""
+    from memory.zep_client import get_client
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(_executor, lambda: get_client().delete_session(session_id))
+    return {"session_id": session_id, "status": "deleted"}
 
 
 @app.post("/rag/ingest")

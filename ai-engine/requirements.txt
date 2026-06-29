@@ -34,3 +34,6 @@ rank-bm25>=0.2.2
 
 # NeMo Guardrails config parsing (Prompt 8)
 pyyaml>=6.0.1
+
+# Zep long-term session memory (Prompt 10)
+zep-cloud>=2.0.0

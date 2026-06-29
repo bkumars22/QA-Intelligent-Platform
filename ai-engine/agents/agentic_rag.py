@@ -23,6 +23,7 @@ from langsmith_utils import trace_node
 from rag.retriever import query as rag_query
 from rag.embedder import embed
 from rag import ragas_eval, eval_store
+from memory.zep_client import get_client as get_memory
 
 logger = logging.getLogger("qaip.agentic_rag")
 
@@ -41,6 +42,7 @@ class RAGState(TypedDict):
     question:        str
     project_id:      int
     source_type:     str | None    # optional filter: test_case | defect | jira_story
+    memory_context:  str           # Zep session context injected before generation
     sub_queries:     list[str]
     retrieved_docs:  list[dict]
     graded_docs:     list[dict]    # each doc + relevance: "yes"|"no"
@@ -257,13 +259,22 @@ def generate(state: RAGState) -> RAGState:
 
     context = "\n\n".join(context_blocks)
 
+    memory_prefix = ""
+    if state.get("memory_context"):
+        memory_prefix = (
+            "## Conversation Memory (from prior sessions)\n"
+            f"{state['memory_context']}\n\n"
+            "---\n"
+        )
+
     system = (
         "You are a QA knowledge assistant. "
         "Answer ONLY from the provided sources. "
         "If the sources don't contain enough information, say so clearly. "
-        "Cite sources by number [1], [2], etc."
+        "Cite sources by number [1], [2], etc. "
+        "You may use the conversation memory above for context on the user's ongoing work."
     )
-    user = f"""Question: {state["question"]}
+    user = f"""{memory_prefix}Question: {state["question"]}
 
 Sources:
 {context}
@@ -368,15 +379,30 @@ def ask(
     project_id:   int,
     source_type:  str | None = None,
     run_eval:     bool = True,
+    session_id:   str | None = None,
 ) -> dict:
     """Public entry point — run the agentic RAG and return structured result.
 
+    session_id: Zep memory session identifier. When provided, prior conversation
+                context is injected before generation and the Q&A pair is persisted
+                to Zep after a successful answer.
     run_eval=True: run RAGAS evaluation after generation and persist to DB.
     """
+    # ── Retrieve Zep memory context (best-effort) ─────────────────────────────
+    memory_context = ""
+    if session_id:
+        try:
+            mem_data = get_memory().get_context(session_id)
+            memory_context = mem_data.get("context", "")
+            logger.debug("[zep] session=%s context_len=%d", session_id, len(memory_context))
+        except Exception as mem_exc:
+            logger.warning("[zep] get_context failed (non-fatal): %s", mem_exc)
+
     initial: RAGState = {
         "question":        question,
         "project_id":      project_id,
         "source_type":     source_type,
+        "memory_context":  memory_context,
         "sub_queries":     [],
         "retrieved_docs":  [],
         "graded_docs":     [],
@@ -436,6 +462,19 @@ def ask(
         except Exception as eval_exc:
             logger.warning("RAGAS eval failed (non-fatal): %s", eval_exc)
 
+    # ── Persist Q&A to Zep memory (best-effort) ──────────────────────────────
+    memory_saved = False
+    if session_id and final.get("answer"):
+        try:
+            mem = get_memory()
+            mem.ensure_session(session_id)
+            mem.add_messages(session_id, question, final["answer"])
+            memory_saved = True
+            logger.debug("[zep] persisted Q&A to session=%s", session_id)
+        except Exception as mem_exc:
+            logger.warning("[zep] add_messages failed (non-fatal): %s", mem_exc)
+
+    from memory.zep_client import get_backend_name
     return {
         "answer":        final["answer"],
         "sources":       final["sources"],
@@ -444,4 +483,10 @@ def ask(
         "is_grounded":   final["is_grounded"],
         "trace":         final["trace"],
         "ragas_metrics": ragas_metrics,
+        "memory": {
+            "session_id":    session_id,
+            "saved":         memory_saved,
+            "context_used":  bool(memory_context),
+            "backend":       get_backend_name(),
+        } if session_id else None,
     }

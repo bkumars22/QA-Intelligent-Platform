@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle, Brain } from 'lucide-react'
 import { RAGASBadge } from './RAGASMetricsPanel'
 import GuardrailsStatusBadge from './GuardrailsStatusBadge'
 
@@ -36,6 +36,13 @@ interface GuardrailsInfo {
   latency_ms?:     number
 }
 
+interface MemoryInfo {
+  session_id:   string
+  saved:        boolean
+  context_used: boolean
+  backend:      string
+}
+
 interface RAGResult {
   answer:        string
   sources:       Source[]
@@ -46,6 +53,7 @@ interface RAGResult {
   ragas_metrics: Record<string, number> | null
   blocked?:      boolean
   guardrails?:   GuardrailsInfo | null
+  memory?:       MemoryInfo | null
 }
 
 interface Message {
@@ -57,6 +65,7 @@ interface Message {
 
 interface Props {
   projectId: number
+  sessionId?: string
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -165,12 +174,18 @@ function TracePanel({ trace, hops, isGrounded }: { trace: TraceNode[]; hops: num
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function AgenticRAGChat({ projectId }: Props) {
+export default function AgenticRAGChat({ projectId, sessionId: propSessionId }: Props) {
   const [messages, setMessages]     = useState<Message[]>([])
   const [input, setInput]           = useState('')
   const [sourceType, setSourceType] = useState<string>('')
   const [loading, setLoading]       = useState(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const bottomRef    = useRef<HTMLDivElement>(null)
+  const ownSessionId = useRef<string>(
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  )
+  const sessionId = propSessionId ?? ownSessionId.current
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -194,6 +209,7 @@ export default function AgenticRAGChat({ projectId }: Props) {
           question:    q,
           project_id:  projectId,
           source_type: sourceType || null,
+          session_id:  sessionId,
         }),
       })
       const data: RAGResult = await res.json()
@@ -225,9 +241,15 @@ export default function AgenticRAGChat({ projectId }: Props) {
             <Search size={15} className="text-blue-400" />
             Agentic RAG
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Query planning · graded retrieval · self-correction · grounded answers
-          </p>
+          <div className="flex items-center gap-3 mt-0.5">
+            <p className="text-xs text-slate-500">
+              Query planning · graded retrieval · self-correction · grounded answers
+            </p>
+            <span className="flex items-center gap-1 text-xs text-purple-400/80">
+              <Brain size={10} />
+              {messages.filter(m => m.role === 'user').length > 0 ? `${messages.filter(m => m.role === 'user').length} turns remembered` : 'Memory active'}
+            </span>
+          </div>
         </div>
         <select
           value={sourceType}
@@ -301,6 +323,16 @@ export default function AgenticRAGChat({ projectId }: Props) {
                             guardrails={msg.result.guardrails ?? null}
                             blocked={msg.result.blocked}
                           />
+
+                          {/* Memory status badge */}
+                          {msg.result.memory && (
+                            <div className="flex items-center gap-1.5 text-xs text-purple-400/80">
+                              <Brain size={10} />
+                              {msg.result.memory.context_used ? 'context recalled' : 'saved to memory'}
+                              <span className="text-slate-600">·</span>
+                              <span className="text-slate-600">{msg.result.memory.backend === 'zep_cloud' ? 'Zep Cloud' : 'in-memory'}</span>
+                            </div>
+                          )}
 
                           {/* RAGAS quality badges */}
                           {msg.result.ragas_metrics && (
