@@ -25,12 +25,6 @@ Built by: B KumaraSwamy — Bangalore, India
 | ARIA — Adaptive Learning AI | https://bkumars22.github.io/ARIA |
 | ZENTRAVIX — Org Intelligence | https://bkumars22.github.io/ZENTRAVIX |
 
-### Login Credentials
-
-| Email | Password | Role |
-|-------|----------|------|
-| admin@qaip.io | Admin@2026 | Admin |
-| dev@qaip.io | Dev@2026 | Developer |
 
 ---
 
@@ -236,3 +230,10 @@ deepeval faithfulness held at 94.2% throughout.**
 | **SCIP** | Supply Chain Intelligence | https://bkumars22.github.io/SupplyChainPlatformProject |
 | **ARIA** | Free AI Tutor (35 languages) | https://bkumars22.github.io/ARIA |
 | **ZENTRAVIX** | Org Intelligence Platform | https://bkumars22.github.io/ZENTRAVIX |
+
+GitHub → QAIP repo → README.md → Edit
+→ Replace the login table with:
+
+### Demo Access
+Contact swamy.kumar02@gmail.com for demo credentials
+Or use the guest view at the live dashboard link above
