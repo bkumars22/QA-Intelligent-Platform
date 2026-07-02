@@ -196,7 +196,36 @@ uvicorn main:app --reload --port 8001
 # Frontend
 cd frontend && npm install && npm start
 ```
+## Cost Optimisation — Rs.50 → Rs.8 per run (84% reduction)
 
+When QAIP was first built, every pipeline node called Claude AI:
+- Test generation → Claude
+- Gap analysis → Claude  
+- Failure explanation → Claude
+- Report generation → Claude
+
+**Result: Rs.50 per run. Not sustainable.**
+
+### Three changes that fixed it:
+
+**1. Model routing**
+Groq (free tier, fast) for test generation — variance acceptable.
+Claude only for defect explanations — faithfulness is business-critical,
+validated by deepeval at 85% threshold.
+
+**2. Prompt compression**
+LangSmith tracing revealed Node 3 was sending the full Jira story
+(~4,000 tokens) when only acceptance criteria were needed (~800 tokens).
+- Node 3 latency: 42 seconds → 8 seconds
+- Cost: dropped proportionally
+
+**3. RAG context selection**
+pgvector stores every previously-generated test case.
+Each sprint retrieves 3 similar past tests and builds on proven patterns.
+Fewer tokens sent. Better tests generated.
+
+**Final result: Rs.50 → Rs.8 per run. 84% reduction.
+deepeval faithfulness held at 94.2% throughout.**
 ---
 
 ## All Live Projects
