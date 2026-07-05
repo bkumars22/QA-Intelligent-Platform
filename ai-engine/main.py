@@ -347,6 +347,10 @@ async def analyze_v2(payload: AnalyzeRequest):
         "dispatch_results":  {},
         "error":           "",
         "status":          "QUEUED",
+        "user_id":         str(payload.project_id),
+        "prompt_tokens":   0,
+        "completion_tokens": 0,
+        "cost_usd":        0.0,
     }
     run_store[run_id] = {"run_id": run_id, "project_id": payload.project_id, "status": "QUEUED", "error": ""}
 
@@ -389,6 +393,10 @@ async def resume_run(run_id: str, payload: AnalyzeRequest):
         "dispatch_results":  {},
         "error":           "",
         "status":          "RESUMING",
+        "user_id":         str(payload.project_id),
+        "prompt_tokens":   0,
+        "completion_tokens": 0,
+        "cost_usd":        0.0,
     }
     run_store[run_id] = {"run_id": run_id, "project_id": payload.project_id, "status": "RESUMING", "error": ""}
     stream_bus.register(run_id)

@@ -37,6 +37,7 @@ from agents.langgraph_agent import (
     dispatch_results,
 )
 import stream_bus
+from aimo_trace import aimo_trace
 
 logger = logging.getLogger("testmind.pipeline_v2")
 
@@ -69,6 +70,11 @@ def _wrap(fn: Callable, node_name: str) -> Callable:
             raise
     wrapper.__name__ = fn.__name__
     return wrapper
+
+
+def _instrument(fn: Callable, node_name: str) -> Callable:
+    """Compose AIMO observability with QAIP's own SSE node streaming."""
+    return aimo_trace(node_name, pipeline="QAIP")(_wrap(fn, node_name))
 
 
 # ---------------------------------------------------------------------------
@@ -162,15 +168,15 @@ def build_graph_v2(checkpointer=None):
     """
     g = StateGraph(AgentState)
 
-    g.add_node("fetch_codebase",   _wrap(fetch_codebase,    "fetch_codebase"))
-    g.add_node("score_risk",       _wrap(score_risk,        "score_risk"))
-    g.add_node("identify_gaps",    _wrap(identify_gaps_v2,  "identify_gaps"))
-    g.add_node("merge_risk_gaps",  _wrap(merge_risk_gaps,   "merge_risk_gaps"))
-    g.add_node("retrieve_context", _wrap(retrieve_context,  "retrieve_context"))
-    g.add_node("generate_tests",   _wrap(generate_tests,    "generate_tests"))
-    g.add_node("detect_defects",   _wrap(detect_defects,    "detect_defects"))
-    g.add_node("explain_and_score",_wrap(explain_and_score, "explain_and_score"))
-    g.add_node("dispatch_results", _wrap(dispatch_results,  "dispatch_results"))
+    g.add_node("fetch_codebase",   _instrument(fetch_codebase,    "fetch_codebase"))
+    g.add_node("score_risk",       _instrument(score_risk,        "score_risk"))
+    g.add_node("identify_gaps",    _instrument(identify_gaps_v2,  "identify_gaps"))
+    g.add_node("merge_risk_gaps",  _instrument(merge_risk_gaps,   "merge_risk_gaps"))
+    g.add_node("retrieve_context", _instrument(retrieve_context,  "retrieve_context"))
+    g.add_node("generate_tests",   _instrument(generate_tests,    "generate_tests"))
+    g.add_node("detect_defects",   _instrument(detect_defects,    "detect_defects"))
+    g.add_node("explain_and_score",_instrument(explain_and_score, "explain_and_score"))
+    g.add_node("dispatch_results", _instrument(dispatch_results,  "dispatch_results"))
 
     g.set_entry_point("fetch_codebase")
 

@@ -31,6 +31,7 @@ from sklearn.ensemble import IsolationForest
 
 from langsmith_utils import trace_node
 from risk_explainer import explain as shap_explain
+import cost_tracker
 
 logger = logging.getLogger("testmind.agent")
 
@@ -53,6 +54,10 @@ class AgentState(TypedDict):
     dispatch_results: dict
     error: str
     status: str
+    user_id: str                  # AIMO span attribution — set to str(project_id)
+    prompt_tokens: int            # accumulated across all Groq calls in this run
+    completion_tokens: int
+    cost_usd: float
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +65,22 @@ class AgentState(TypedDict):
 # ---------------------------------------------------------------------------
 def _groq_client() -> Groq:
     return Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+
+def _capture_usage(state: AgentState, model: str, resp, task_type: str) -> None:
+    """Accumulate token usage + cost onto state (read by @aimo_trace) and log
+    to QAIP's own cost dashboard. These LangGraph nodes call Groq directly
+    and previously recorded no cost data anywhere."""
+    usage = getattr(resp, "usage", None)
+    prompt_tokens     = usage.prompt_tokens     if usage else 0
+    completion_tokens = usage.completion_tokens if usage else 0
+    evt = cost_tracker.record(
+        project="QAIP", task_type=task_type, model_id=model,
+        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+    )
+    state["prompt_tokens"]     = state.get("prompt_tokens", 0) + prompt_tokens
+    state["completion_tokens"] = state.get("completion_tokens", 0) + completion_tokens
+    state["cost_usd"]          = state.get("cost_usd", 0.0) + evt.cost_usd
 
 
 def _repo_name_from_url(url: str) -> str:
@@ -407,6 +428,7 @@ def generate_tests(state: AgentState) -> AgentState:
                     temperature=0.2,
                     max_tokens=2048,
                 )
+                _capture_usage(state, "llama-3.3-70b-versatile", response, "generate_tests")
                 test_code = response.choices[0].message.content.strip()
             except Exception as llm_exc:
                 logger.warning("[%s] LLM call failed for %s: %s", state["run_id"], file_path, llm_exc)
@@ -671,6 +693,7 @@ def explain_and_score(state: AgentState) -> AgentState:
                         temperature=0.3,
                         max_tokens=1024,
                     )
+                    _capture_usage(state, "llama-3.3-70b-versatile", response, "explain_and_score")
                     explanation = response.choices[0].message.content.strip()
                     score = _consistency_score(explanation)
                     if score >= 0.85:
