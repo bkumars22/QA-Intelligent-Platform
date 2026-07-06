@@ -9,6 +9,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)](https://python.org)
 [![React 18](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react)](https://react.dev)
 [![Groq](https://img.shields.io/badge/AI-Groq%20Llama--3.3--70b-f97316?style=flat-square)](https://console.groq.com)
+[![Azure OpenAI](https://img.shields.io/badge/AI-Azure%20OpenAI%20(optional)-0078d4?style=flat-square)](https://azure.microsoft.com/products/ai-services/openai-service)
 [![RAG](https://img.shields.io/badge/RAG-pgvector%20%2B%20sentence--transformers-8b5cf6?style=flat-square)](https://github.com/bkumars22/QA-Intelligent-Platform)
 
 GitHub: [github.com/bkumars22/QA-Intelligent-Platform](https://github.com/bkumars22/QA-Intelligent-Platform)
@@ -127,7 +128,7 @@ dispatch_results    ← saves to PostgreSQL, triggers auto-ingest
 | Frontend | React 18, TypeScript, Tailwind CSS |
 | Backend | Spring Boot 3.3, Java 17, JWT auth |
 | AI Engine | Python 3.11, FastAPI, LangGraph |
-| LLM | Groq API — Llama-3.3-70b-versatile (free) |
+| LLM | Groq API — Llama-3.3-70b-versatile (free, default) + Azure OpenAI (optional, defect explanations) |
 | RAG | pgvector + sentence-transformers all-MiniLM-L6-v2 |
 | Database | PostgreSQL 15 (Railway) + Flyway migrations (V1–V22) |
 | Testing | Playwright TypeScript, JUnit 5, Testcontainers |

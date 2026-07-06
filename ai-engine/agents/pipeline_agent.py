@@ -6,7 +6,7 @@ Stage 2: analyze_gaps       — GitHub files + story ACs -> gap report
 Stage 3: generate_tests     — gap report -> test cases (happy/error/edge)
           -- PAUSE: human reviews in UI, approves/rejects --
 Stage 4: execute_tests      — Playwright runs approved tests vs live URL
-Stage 5: analyze_results    — Groq + deepeval -> AI explanations per defect
+Stage 5: analyze_results    — Groq (or Azure OpenAI, if configured) + deepeval -> AI explanations per defect
 Stage 6: generate_code      — approved tests -> Playwright TS + Selenium Java files
 Stage 7: integrate_cicd     — Jira tickets + Slack summary + backend callback
 
@@ -80,6 +80,27 @@ def _llm(prompt: str, system: str = "You are an expert QA engineer.", max_tokens
     except Exception as e:
         logger.error("Groq call failed: %s", e)
         return ""
+
+
+def _llm_explain(prompt: str, system: str = "You are an expert QA engineer.", max_tokens: int = 600) -> str:
+    """
+    Defect-explanation call used only by Stage 5 (analyze_results).
+
+    Routes to Azure OpenAI when AZURE_OPENAI_API_KEY is set (same deepeval
+    faithfulness gate applies downstream — this only swaps which model
+    produces the text); falls back to Groq otherwise, same as every other
+    pipeline stage.
+    """
+    from providers.azure_provider import AzureOpenAIProvider, is_configured
+
+    if is_configured():
+        try:
+            result = AzureOpenAIProvider().complete(prompt, system=system, max_tokens=max_tokens)
+            return result.text
+        except Exception as e:
+            logger.error("Azure OpenAI call failed, falling back to Groq: %s", e)
+
+    return _llm(prompt, system=system, max_tokens=max_tokens)
 
 
 def _parse_json_block(text: str) -> Any:
@@ -480,7 +501,7 @@ def _run_single_test(tc: dict, target_url: str, run_id: str) -> dict:
 # --- Stage 5: Results Analysis -----------------------------------------------
 
 def analyze_results(state: PipelineState) -> PipelineState:
-    """Groq AI analyses execution results + deepeval scoring."""
+    """AI analyses execution results + deepeval scoring (Azure OpenAI if configured, else Groq)."""
     logger.info("[%s] Stage 5 — analyze_results", state["pipeline_run_id"])
     try:
         results = state.get("execution_results", [])
@@ -507,7 +528,7 @@ Provide a clear explanation in this JSON format:
 }}
 Return ONLY JSON.
 """
-            explanation = _parse_json_block(_llm(explanation_prompt, max_tokens=600))
+            explanation = _parse_json_block(_llm_explain(explanation_prompt, max_tokens=600))
             if explanation:
                 res["ai_explanation"] = json.dumps(explanation)
                 # Simple consistency score: check all 4 fields present and non-empty
