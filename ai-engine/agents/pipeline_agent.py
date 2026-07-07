@@ -17,6 +17,7 @@ Two separate graphs:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -101,6 +102,62 @@ def _llm_explain(prompt: str, system: str = "You are an expert QA engineer.", ma
             logger.error("Azure OpenAI call failed, falling back to Groq: %s", e)
 
     return _llm(prompt, system=system, max_tokens=max_tokens)
+
+
+_DEFAULT_EXPLANATION_SYSTEM_PROMPT = """You are a QA engineer explaining a test failure.
+Given a STORY, TEST, and ERROR description, provide a clear explanation in this JSON format:
+{
+  "root_cause": "What caused the failure",
+  "business_impact": "How this affects the user or business",
+  "fix_recommendation": "Specific code/config change to fix this",
+  "severity": "P0 | P1 | P2 | P3"
+}
+Return ONLY JSON."""
+
+_aipq_client = None
+
+
+def _get_aipq_client():
+    """Lazily constructs the AIPQ client — None (and a no-op) when AIPQ_API_KEY isn't set."""
+    global _aipq_client
+    if _aipq_client is None and os.getenv("AIPQ_API_KEY"):
+        from aipq import AIPQClient
+        _aipq_client = AIPQClient(
+            api_key=os.getenv("AIPQ_API_KEY"),
+            project_id=os.getenv("AIPQ_PROJECT_ID", ""),
+            base_url=os.getenv("AIPQ_BASE_URL", "http://localhost:8001"),
+        )
+    return _aipq_client
+
+
+def _get_explanation_system_prompt() -> str:
+    """
+    Returns the current defect-explanation system prompt, version-controlled
+    and quality-gated by AIPQ (qaip_defect_explanation / qaip_explanation_golden)
+    when AIPQ_API_KEY is set. Falls back to the hardcoded template — unchanged
+    from before this integration — when AIPQ isn't configured or unreachable.
+
+    Stage 5 runs inside a background-thread executor (see main.py), never
+    inside an already-running event loop, so asyncio.run() here is safe.
+    """
+    client = _get_aipq_client()
+    if client is None:
+        return _DEFAULT_EXPLANATION_SYSTEM_PROMPT
+
+    from aipq import aipq_prompt
+
+    @aipq_prompt(
+        name="qaip_defect_explanation", dataset="qaip_explanation_golden",
+        threshold=0.85, client=client,
+    )
+    async def _template() -> str:
+        return _DEFAULT_EXPLANATION_SYSTEM_PROMPT
+
+    try:
+        return asyncio.run(_template())
+    except Exception as e:
+        logger.warning("AIPQ template resolution failed, using hardcoded template: %s", e)
+        return _DEFAULT_EXPLANATION_SYSTEM_PROMPT
 
 
 def _parse_json_block(text: str) -> Any:
@@ -510,25 +567,19 @@ def analyze_results(state: PipelineState) -> PipelineState:
         passed = sum(1 for r in results if r.get("status") == "PASSED")
         failed = [r for r in results if r.get("status") == "FAILED"]
 
+        # Resolve once per run — same (possibly AIPQ-versioned) template for every defect below
+        explanation_system_prompt = _get_explanation_system_prompt()
+
         # Generate AI explanation for each failure
         for res in failed:
-            explanation_prompt = f"""
-You are a QA engineer explaining a test failure.
-
-STORY: {story["jira_story_id"]} — {story["jira_summary"]}
-TEST: {res.get("title", "Unknown")}
-ERROR: {res.get("error_message", "No error message")}
-
-Provide a clear explanation in this JSON format:
-{{
-  "root_cause": "What caused the failure",
-  "business_impact": "How this affects the user or business",
-  "fix_recommendation": "Specific code/config change to fix this",
-  "severity": "P0 | P1 | P2 | P3"
-}}
-Return ONLY JSON.
-"""
-            explanation = _parse_json_block(_llm_explain(explanation_prompt, max_tokens=600))
+            explanation_input = (
+                f"STORY: {story['jira_story_id']} — {story['jira_summary']}\n"
+                f"TEST: {res.get('title', 'Unknown')}\n"
+                f"ERROR: {res.get('error_message', 'No error message')}"
+            )
+            explanation = _parse_json_block(
+                _llm_explain(explanation_input, system=explanation_system_prompt, max_tokens=600)
+            )
             if explanation:
                 res["ai_explanation"] = json.dumps(explanation)
                 # Simple consistency score: check all 4 fields present and non-empty
