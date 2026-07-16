@@ -3,6 +3,7 @@ package com.testmind.security;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -47,6 +48,9 @@ public class SecurityConfig {
                     "/api-docs/**",
                     "/actuator/**"
                 ).permitAll()
+                // Called by the performance.yml workflow, not a logged-in user —
+                // guarded internally by X-Performance-Secret instead of a JWT.
+                .requestMatchers(HttpMethod.POST, "/api/performance/results").permitAll()
                 .anyRequest().authenticated())
             .headers(headers -> headers
                 .frameOptions(frame -> frame.deny())

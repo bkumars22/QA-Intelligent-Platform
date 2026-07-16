@@ -227,4 +227,59 @@ export async function getAllDefects(): Promise<Defect[]> {
   return data;
 }
 
+// Performance — Locust load tests via the Performance Gate GitHub Actions workflow
+export interface PerformanceRunRequest {
+  system: string;
+  host: string;
+  users?: number;
+  runTime?: string;
+}
+
+export interface PerformanceRunResponse {
+  dispatched: boolean;
+  dispatchedAt?: string;
+  message: string;
+}
+
+export interface PerformanceRunStatus {
+  status: string;
+  conclusion?: string | null;
+  runUrl?: string | null;
+}
+
+export interface PerformanceResult {
+  id: number;
+  system: string;
+  buildSha: string;
+  endpoint: string;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  requestsPerSec: number;
+  errorRatePct: number;
+  totalRequests: number;
+  totalFailures: number;
+  passedGate: boolean;
+  testedAt: string;
+}
+
+export async function runPerformanceTest(payload: PerformanceRunRequest): Promise<PerformanceRunResponse> {
+  if (isDemo()) {
+    return Promise.resolve({ dispatched: false, message: 'Running load tests is disabled in demo mode.' });
+  }
+  const { data } = await api.post<PerformanceRunResponse>('/performance/run', payload);
+  return data;
+}
+
+export async function getPerformanceRunStatus(dispatchedAt: string): Promise<PerformanceRunStatus> {
+  const { data } = await api.get<PerformanceRunStatus>('/performance/run/status', { params: { dispatchedAt } });
+  return data;
+}
+
+export async function getPerformanceResults(system: string): Promise<PerformanceResult[]> {
+  if (isDemo()) return Promise.resolve([]);
+  const { data } = await api.get<PerformanceResult[]>('/performance/results', { params: { system } });
+  return data;
+}
+
 export default api;

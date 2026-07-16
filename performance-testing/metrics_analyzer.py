@@ -9,7 +9,9 @@ the same "gate before deploy" philosophy AIPQ uses for prompt quality.
 
 import csv
 import json
+import os
 import sys
+import urllib.request
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -106,6 +108,53 @@ def check_regressions(current: list[PerfMetrics], baseline: dict[str, dict]) -> 
     return failures
 
 
+def push_results(current: list[PerfMetrics], regressions: list[str]) -> None:
+    """
+    Best-effort push of this run's metrics to QAIP's backend for the
+    Performance tab to display. Controlled entirely by env vars so this
+    is a no-op (not an error) when they're unset — e.g. running this
+    script locally without a backend to push to. A failed push never
+    fails the build; the regression gate above already decided that.
+    """
+    api_url = os.environ.get("PERFORMANCE_API_URL")
+    secret = os.environ.get("PERFORMANCE_CALLBACK_SECRET")
+    if not api_url or not secret:
+        return
+
+    system = os.environ.get("PERFORMANCE_SYSTEM", "QAIP")
+    build_sha = os.environ.get("GITHUB_SHA", "local")
+    passed = len(regressions) == 0
+
+    payload = [
+        {
+            "system": system,
+            "buildSha": build_sha,
+            "endpoint": m.endpoint,
+            "p50Ms": m.p50_ms,
+            "p95Ms": m.p95_ms,
+            "p99Ms": m.p99_ms,
+            "requestsPerSec": m.requests_per_sec,
+            "errorRatePct": m.error_rate_pct,
+            "totalRequests": m.total_requests,
+            "totalFailures": m.total_failures,
+            "passedGate": passed,
+        }
+        for m in current
+    ]
+
+    try:
+        req = urllib.request.Request(
+            f"{api_url}/api/performance/results",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Performance-Secret": secret},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"Pushed {len(payload)} results to {api_url} (status {resp.status})")
+    except Exception as exc:
+        print(f"Warning: failed to push results to {api_url}: {exc}")
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python metrics_analyzer.py <locust_stats.csv> [baseline.json]")
@@ -123,6 +172,8 @@ def main():
         print(f"{m.endpoint}")
         print(f"  P50: {m.p50_ms}ms | P95: {m.p95_ms}ms | P99: {m.p99_ms}ms")
         print(f"  Throughput: {m.requests_per_sec} req/s | Error rate: {m.error_rate_pct}%\n")
+
+    push_results(current_metrics, regressions)
 
     if regressions:
         print("=== REGRESSIONS DETECTED — BUILD FAILED ===")

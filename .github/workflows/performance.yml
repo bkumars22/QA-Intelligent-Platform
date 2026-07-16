@@ -1,14 +1,20 @@
 name: Performance Gate
 
-# Standalone workflow — deliberately not wired into ci.yml's automatic
-# push/PR triggers. Load-testing a real host (including production, since
-# QAIP has no separate staging environment) is something you opt into per
-# run, not something that fires on every push. Trigger manually from the
-# Actions tab, or wire it up as a "needs" dependency of ci.yml's deploy
-# job yourself once you're comfortable with what it does to the target host.
+# Manual-trigger only — see performance-testing/README.md for why (no
+# staging environment, load-testing a real host should be opt-in). Can be
+# dispatched from the Actions tab, or programmatically via
+# POST /api/performance/run on the backend (backend/.../GithubActionsClient).
 on:
   workflow_dispatch:
     inputs:
+      system:
+        description: 'Which system to load-test'
+        required: true
+        default: 'qaip'
+        type: choice
+        options:
+          - qaip
+          - aria
       host:
         description: 'Base URL to load-test (e.g. https://testmind-production.up.railway.app)'
         required: true
@@ -39,9 +45,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: performance-testing/baseline.json
-          key: perf-baseline-${{ github.ref_name }}
+          key: perf-baseline-${{ github.event.inputs.system }}-${{ github.ref_name }}
 
-      - name: Run load test
+      - name: Run load test (QAIP)
+        if: github.event.inputs.system == 'qaip'
         run: |
           locust -f performance-testing/locustfile.py \
             --host ${{ github.event.inputs.host }} \
@@ -51,7 +58,21 @@ jobs:
             --test-password "${{ secrets.PERF_TEST_PASSWORD }}" \
             --csv=results/perf_run
 
-      - name: Analyze results and check for regressions
+      - name: Run load test (ARIA)
+        if: github.event.inputs.system == 'aria'
+        run: |
+          locust -f performance-testing/aria_locustfile.py \
+            --host ${{ github.event.inputs.host }} \
+            --headless --users ${{ github.event.inputs.users }} --spawn-rate 10 \
+            --run-time ${{ github.event.inputs.run_time }} \
+            --test-student-id "${{ secrets.ARIA_PERF_TEST_STUDENT_ID }}" \
+            --csv=results/perf_run
+
+      - name: Analyze results, check for regressions, push to backend
+        env:
+          PERFORMANCE_API_URL: ${{ secrets.PERFORMANCE_API_URL }}
+          PERFORMANCE_CALLBACK_SECRET: ${{ secrets.PERFORMANCE_CALLBACK_SECRET }}
+          PERFORMANCE_SYSTEM: ${{ github.event.inputs.system }}
         run: |
           python performance-testing/metrics_analyzer.py \
             results/perf_run_stats.csv \
@@ -59,18 +80,21 @@ jobs:
         # Non-zero exit code here fails this step — wire this job into
         # ci.yml's deploy job via "needs:" if you want a build that got
         # slower under load to be blocked rather than shipped silently.
+        # The push to PERFORMANCE_API_URL is best-effort and does not
+        # affect this step's pass/fail (see metrics_analyzer.py's
+        # push_results()) — it's a no-op if those secrets aren't set.
 
       - name: Save updated baseline
         if: success()
         uses: actions/cache/save@v4
         with:
           path: performance-testing/baseline.json
-          key: perf-baseline-${{ github.ref_name }}
+          key: perf-baseline-${{ github.event.inputs.system }}-${{ github.ref_name }}
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: performance-results
+          name: performance-results-${{ github.event.inputs.system }}
           path: results/
           retention-days: 30
