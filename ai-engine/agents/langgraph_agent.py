@@ -173,10 +173,13 @@ def _extract_features(file_info: dict) -> list[float]:
     lines_changed = float(file_info.get("lines_changed", 0))
     file_size_kb = len(content.encode("utf-8")) / 1024.0
     import_count = float(
-        sum(1 for ln in lines if re.match(r"^\s*(import |from .+ import |require\()", ln))
+        sum(
+            1 for ln in lines
+            if re.match(r"^\s*(import |from .+ import )", ln) or re.search(r"\brequire\(", ln)
+        )
     )
     function_count = float(
-        len(re.findall(r"\bdef \w+|\bfunction \w+|\b=>\s*\{|\basync function\b", content))
+        len(re.findall(r"\bdef \w+|\bfunction \w+|=>\s*\{|\basync function\b", content))
     )
     content_lower = content.lower()
     has_auth_code = float(
