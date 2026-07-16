@@ -1,0 +1,98 @@
+# Zero-trust network policy: deny all traffic by default,
+# then explicitly allow only what qaip-core-api actually needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qaip-default-deny
+  namespace: qaip
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qaip-core-api-allow
+  namespace: qaip
+spec:
+  podSelector:
+    matchLabels:
+      app: qaip-core-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the API gateway / ingress controller can reach core-api
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Postgres
+    - to:
+        - podSelector:
+            matchLabels:
+              app: qaip-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: qaip-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Kafka event bus
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: qaip-kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+# RBAC: service account for core-api gets least-privilege access —
+# it can read its own config/secrets, nothing else in the cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qaip-core-sa
+  namespace: qaip
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: qaip-core-role
+  namespace: qaip
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    resourceNames: ["qaip-db-secret", "qaip-auth-secret", "qaip-core-config"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: qaip-core-rolebinding
+  namespace: qaip
+subjects:
+  - kind: ServiceAccount
+    name: qaip-core-sa
+    namespace: qaip
+roleRef:
+  kind: Role
+  name: qaip-core-role
+  apiGroup: rbac.authorization.k8s.io

@@ -119,6 +119,8 @@ explain_and_score   ← AI root-cause analysis per defect
 dispatch_results    ← saves to PostgreSQL, triggers auto-ingest
 ```
 
+> Scaling idea for higher commit volume: [hybrid cloud architecture proposal](docs/architecture/hybrid-cloud-proposal/README.md) (Kafka + serverless AI inference) — a design reference, not implemented.
+
 ---
 
 ## Tech Stack

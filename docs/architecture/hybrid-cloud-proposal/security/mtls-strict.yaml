@@ -1,0 +1,30 @@
+# Enforce mutual TLS between every service in the qaip namespace.
+# No plaintext traffic is accepted, even from inside the cluster.
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: qaip-mtls-strict
+  namespace: qaip
+spec:
+  mtls:
+    mode: STRICT
+---
+# Authorization: only qaip-core-api may call the AI orchestrator endpoint.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: qaip-ai-orchestrator-access
+  namespace: qaip
+spec:
+  selector:
+    matchLabels:
+      app: qaip-ai-orchestrator
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/qaip/sa/qaip-core-sa"]
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/analyze", "/risk-score"]

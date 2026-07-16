@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qaip-core-api
+  namespace: qaip
+  labels:
+    app: qaip-core-api
+    tier: core-services
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: qaip-core-api
+  template:
+    metadata:
+      labels:
+        app: qaip-core-api
+        tier: core-services
+    spec:
+      serviceAccountName: qaip-core-sa
+      containers:
+        - name: qaip-core-api
+          image: ghcr.io/your-org/qaip-core-api:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "production"
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: qaip-db-secret
+                  key: host
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: qaip-db-secret
+                  key: password
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "qaip-kafka-bootstrap.qaip.svc.cluster.local:9092"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: qaip-auth-secret
+                  key: jwt-secret
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qaip-core-api
+  namespace: qaip
+spec:
+  selector:
+    app: qaip-core-api
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: qaip-core-api-hpa
+  namespace: qaip
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: qaip-core-api
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
