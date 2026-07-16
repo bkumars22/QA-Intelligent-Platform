@@ -38,19 +38,6 @@ function StatCard({ title, value, icon, colorClass, bgClass }: StatCardProps) {
   );
 }
 
-function RiskBar({ score }: { score: number }) {
-  const pct = Math.round(score * 100);
-  const color =
-    score > 0.7 ? 'bg-red-500' : score > 0.4 ? 'bg-yellow-400' : 'bg-green-500';
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex-1 bg-gray-100 rounded-full h-2">
-        <div className={`${color} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs font-mono text-gray-600 w-8 text-right">{pct}%</span>
-    </div>
-  );
-}
 
 const SEVERITY_COLORS: Record<DefectSeverity, string> = {
   P0: '#dc2626',

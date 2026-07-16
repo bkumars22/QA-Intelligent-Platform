@@ -8,7 +8,7 @@
  *    (width = fraction of parent duration, left offset = start offset)
  */
 import { useState, useEffect, useCallback } from 'react'
-import { Activity, ChevronDown, ChevronRight, RefreshCw, Zap, Shield, Brain } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, RefreshCw, Zap } from 'lucide-react'
 
 const AI_ENGINE = import.meta.env.VITE_AI_ENGINE_URL ?? 'http://localhost:8001'
 const POLL_MS   = 5_000
@@ -66,13 +66,6 @@ function spanColor(name: string): string {
     if (name.startsWith(prefix)) return cls
   }
   return 'bg-slate-500'
-}
-
-function spanCategory(name: string): string {
-  if (name.startsWith('rag.'))        return 'RAG'
-  if (name.startsWith('guardrails'))  return 'Guardrails'
-  if (name.startsWith('memory'))      return 'Memory'
-  return 'HTTP'
 }
 
 // ── Waterfall ─────────────────────────────────────────────────────────────────

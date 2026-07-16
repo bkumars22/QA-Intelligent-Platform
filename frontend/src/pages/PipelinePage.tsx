@@ -285,7 +285,7 @@ export function PipelinePage() {
             <div className="space-y-3">
               <PipelineProgressLive
                 runId={v2RunId}
-                onDone={(status) => {
+                onDone={() => {
                   queryClient.invalidateQueries({ queryKey: ['pipeline-runs'] });
                 }}
               />

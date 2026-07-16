@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, FlaskConical, TrendingUp, Clock } from 'lucide-react'
+import { ChevronDown, ChevronRight, FlaskConical, TrendingUp } from 'lucide-react'
 
 const AI_ENGINE = import.meta.env.VITE_AI_ENGINE_URL ?? 'http://localhost:8001'
 
