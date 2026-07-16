@@ -46,3 +46,8 @@ opentelemetry-instrumentation-fastapi>=0.41b0
 opentelemetry-instrumentation-httpx>=0.41b0
 # Optional: uncomment when connecting to Jaeger / Grafana Tempo
 # opentelemetry-exporter-otlp-proto-grpc>=1.20.0
+
+# Test runner — ci.yml's ai-engine-test job runs `pytest ... --cov=.`,
+# which needs both installed
+pytest>=8.0.0
+pytest-cov>=5.0.0

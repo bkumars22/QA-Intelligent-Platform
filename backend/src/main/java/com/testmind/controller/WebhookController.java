@@ -1,12 +1,16 @@
 package com.testmind.controller;
 
+import com.testmind.model.TestRun;
+import com.testmind.model.TestRunStatus;
 import com.testmind.repository.ProjectRepository;
+import com.testmind.repository.TestRunRepository;
 import com.testmind.service.AiEngineClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -17,10 +21,12 @@ public class WebhookController {
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
     private final ProjectRepository projectRepo;
+    private final TestRunRepository testRunRepo;
     private final AiEngineClient aiClient;
 
-    public WebhookController(ProjectRepository projectRepo, AiEngineClient aiClient) {
+    public WebhookController(ProjectRepository projectRepo, TestRunRepository testRunRepo, AiEngineClient aiClient) {
         this.projectRepo = projectRepo;
+        this.testRunRepo = testRunRepo;
         this.aiClient = aiClient;
     }
 
@@ -64,9 +70,19 @@ public class WebhookController {
                 .findFirst()
                 .ifPresentOrElse(
                         project -> {
-                            log.info("Triggering analysis for project {} on push to {}", project.getId(), repoUrl);
+                            TestRun testRun = TestRun.builder()
+                                    .project(project)
+                                    .status(TestRunStatus.PENDING)
+                                    .triggeredBy("github-webhook:" + commitSha)
+                                    .startedAt(LocalDateTime.now())
+                                    .defectCount(0)
+                                    .build();
+                            testRunRepo.save(testRun);
+
+                            log.info("Triggering analysis for project {} run {} on push to {}",
+                                    project.getId(), testRun.getId(), repoUrl);
                             aiClient.triggerAnalysis(project.getId(), repoUrl,
-                                    project.getGithubToken(), commitSha);
+                                    project.getGithubToken(), testRun.getId());
                         },
                         () -> log.warn("No project found for repo: {}", repoUrl)
                 );
