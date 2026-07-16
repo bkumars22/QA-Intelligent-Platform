@@ -1,0 +1,76 @@
+name: Performance Gate
+
+# Standalone workflow — deliberately not wired into ci.yml's automatic
+# push/PR triggers. Load-testing a real host (including production, since
+# QAIP has no separate staging environment) is something you opt into per
+# run, not something that fires on every push. Trigger manually from the
+# Actions tab, or wire it up as a "needs" dependency of ci.yml's deploy
+# job yourself once you're comfortable with what it does to the target host.
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'Base URL to load-test (e.g. https://testmind-production.up.railway.app)'
+        required: true
+      users:
+        description: 'Concurrent simulated users'
+        required: false
+        default: '50'
+      run_time:
+        description: 'Test duration (e.g. 5m)'
+        required: false
+        default: '5m'
+
+jobs:
+  performance-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Locust
+        run: pip install locust
+
+      - name: Restore performance baseline
+        uses: actions/cache@v4
+        with:
+          path: performance-testing/baseline.json
+          key: perf-baseline-${{ github.ref_name }}
+
+      - name: Run load test
+        run: |
+          locust -f performance-testing/locustfile.py \
+            --host ${{ github.event.inputs.host }} \
+            --headless --users ${{ github.event.inputs.users }} --spawn-rate 10 \
+            --run-time ${{ github.event.inputs.run_time }} \
+            --test-email "${{ secrets.PERF_TEST_EMAIL }}" \
+            --test-password "${{ secrets.PERF_TEST_PASSWORD }}" \
+            --csv=results/perf_run
+
+      - name: Analyze results and check for regressions
+        run: |
+          python performance-testing/metrics_analyzer.py \
+            results/perf_run_stats.csv \
+            performance-testing/baseline.json
+        # Non-zero exit code here fails this step — wire this job into
+        # ci.yml's deploy job via "needs:" if you want a build that got
+        # slower under load to be blocked rather than shipped silently.
+
+      - name: Save updated baseline
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: performance-testing/baseline.json
+          key: perf-baseline-${{ github.ref_name }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: results/
+          retention-days: 30
