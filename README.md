@@ -224,18 +224,16 @@ Fewer tokens sent. Better tests generated.
 **Final result: Rs.50 → Rs.8 per run. 84% reduction.
 deepeval faithfulness held at 94.2% throughout.**
 ---
-
 ## All Live Projects
 
-| Platform | Description | Live URL |
-|----------|-------------|---------|
-| **QAIP** | QA Intelligent Platform | **https://bkumars22.github.io/QA-Intelligent-Platform** |
-| **SCIP** | Supply Chain Intelligence | https://bkumars22.github.io/SupplyChainPlatformProject |
-| **ARIA** | Free AI Tutor (35 languages) | https://bkumars22.github.io/ARIA |
-| **ZENTRAVIX** | Org Intelligence Platform | https://bkumars22.github.io/ZENTRAVIX |
+| Platform      | Description                  | Live URL                                                  |
+| ------------- | ----------------------------- | ---------------------------------------------------------- |
+| **QAIP**      | QA Intelligent Platform       | **<https://bkumars22.github.io/QA-Intelligent-Platform>**  |
+| **SCIP**      | Supply Chain Intelligence     | <https://bkumars22.github.io/SupplyChainPlatformProject>   |
+| **ARIA**      | Free AI Tutor (35 languages)  | <https://bkumars22.github.io/ARIA>                         |
+| **ZENTRAVIX** | Org Intelligence Platform     | <https://bkumars22.github.io/ZENTRAVIX>                    |
 
-GitHub → QAIP repo → README.md → Edit
-→ Replace the login table with:
+----
 
 ### Demo Access
 Contact swamy.kumar02@gmail.com for demo credentials
