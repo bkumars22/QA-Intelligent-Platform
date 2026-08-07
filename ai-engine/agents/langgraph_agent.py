@@ -18,6 +18,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import tempfile
 import time
 from typing import TypedDict
 
@@ -51,6 +53,8 @@ class AgentState(TypedDict):
     generated_tests: list[dict]    # [{file_path, test_code, language}]
     defects: list[dict]            # [{title, severity, description, stack_trace}]
     explained_defects: list[dict]  # defects + ai_explanation + consistency_score
+    generated_fixes: list[dict]    # [{file_path, defect_title, severity, fix_diff}] — CodegenerateAgent output
+    pr_results: list[dict]         # [{file_path, defect_title, branch, status, pr_url, tests_passed, why}] — audit trail
     dispatch_results: dict
     error: str
     status: str
@@ -744,6 +748,295 @@ def explain_and_score(state: AgentState) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
+# Node 6.5 — generate_fixes (CodegenerateAgent: proposes patches for defects)
+# ---------------------------------------------------------------------------
+_SYSTEM_CODEGEN = (
+    "You are a senior software engineer. Given a defect and the file it occurs in, "
+    "produce a minimal fix.\n"
+    "Rules:\n"
+    "1. Fix ONLY the defect described — do not refactor unrelated code\n"
+    "2. Return a unified diff (---/+++ headers, @@ hunks) against the file as shown\n"
+    "3. Keep the change as small as possible while fully resolving the defect\n"
+    "4. Return ONLY the diff, no explanation"
+)
+
+
+@trace_node("generate_fixes")
+def generate_fixes(state: AgentState) -> AgentState:
+    """CodegenerateAgent — proposes a patch for each high-severity defect."""
+    state["status"] = "GENERATING_FIXES"
+    logger.info("[%s] generate_fixes started", state["run_id"])
+
+    try:
+        explained_defects = state.get("explained_defects", [])
+        file_map = {f["path"]: f for f in state.get("file_list", [])}
+        client = _groq_client()
+
+        to_fix = [d for d in explained_defects if d.get("severity") in ("P0", "P1")][:5]
+        fixes: list[dict] = []
+
+        for defect in to_fix:
+            file_path = defect.get("file_path", "")
+            file_info = file_map.get(file_path, {})
+            content = file_info.get("content", "")
+            if not content:
+                continue
+
+            user_prompt = (
+                f"Defect: {defect['title']}\n"
+                f"Severity: {defect['severity']}\n"
+                f"Description: {defect['description']}\n"
+                f"Root cause / explanation: {defect.get('ai_explanation', '')[:1500]}\n\n"
+                f"File: {file_path}\n\n"
+                f"Content:\n{content[:3000]}"
+            )
+
+            try:
+                response = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_CODEGEN},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.1,
+                    max_tokens=2048,
+                )
+                _capture_usage(state, "llama-3.3-70b-versatile", response, "generate_fixes")
+                fix_diff = response.choices[0].message.content.strip()
+            except Exception as llm_exc:
+                logger.warning("[%s] Fix generation failed for %s: %s", state["run_id"], file_path, llm_exc)
+                fix_diff = f"// Fix generation failed for {file_path}: {llm_exc}"
+
+            fixes.append(
+                {
+                    "file_path": file_path,
+                    "defect_title": defect["title"],
+                    "severity": defect["severity"],
+                    "fix_diff": fix_diff,
+                }
+            )
+            logger.info("[%s] Generated fix for %s (%s)", state["run_id"], file_path, defect["severity"])
+
+        state["generated_fixes"] = fixes
+        logger.info("[%s] generate_fixes complete, %d fixes proposed", state["run_id"], len(fixes))
+
+    except Exception as exc:
+        logger.exception("[%s] generate_fixes failed: %s", state["run_id"], exc)
+        state["error"] = f"generate_fixes: {exc}"
+        state["status"] = "FAILED"
+
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Node 6.6 — apply_and_verify_fixes (CodegenerateAgent: clone, patch, retest, PR)
+# ---------------------------------------------------------------------------
+# Rollback story: a fix NEVER touches the target branch directly. Each one is
+# applied on its own auto-fix/<run>-<slug> branch and only reaches GitHub as
+# an open PR — nothing is auto-merged. To undo: close the PR (repo is
+# untouched) or, if already merged, `git revert` the merge commit like any
+# other change. This is why no separate "undo" mechanism is implemented here.
+
+_SUBPROJECT_TEST_CMDS: dict[str, list[str]] = {
+    "ai-engine": ["python", "-m", "pytest", "-q"],
+    "backend": ["mvnw.cmd" if os.name == "nt" else "./mvnw", "-q", "test"],
+}
+
+
+def _sanitize(text: str) -> str:
+    """Strip anything that looks like a token from text before it hits logs/audit records."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    if token:
+        text = text.replace(token, "***")
+    return text[:800]
+
+
+def _slugify_branch(run_id: str, title: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "fix"
+    return f"auto-fix/{run_id[:8]}-{slug}"
+
+
+def _clone_repo(repo_url: str, github_token: str, commit_sha: str, dest: str) -> None:
+    owner_repo = _repo_name_from_url(repo_url)
+    auth_url = f"https://{github_token}@github.com/{owner_repo}.git"
+    subprocess.run(
+        ["git", "clone", "--quiet", auth_url, dest],
+        check=True, timeout=120, capture_output=True, text=True,
+    )
+    subprocess.run(
+        ["git", "checkout", "--quiet", commit_sha],
+        cwd=dest, check=True, timeout=60, capture_output=True, text=True,
+    )
+
+
+def _apply_diff(repo_dir: str, diff_text: str) -> tuple[bool, str]:
+    patch_path = os.path.join(repo_dir, ".qaip_fix.patch")
+    with open(patch_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(diff_text if diff_text.endswith("\n") else diff_text + "\n")
+    try:
+        result = subprocess.run(
+            ["git", "apply", "--whitespace=fix", ".qaip_fix.patch"],
+            cwd=repo_dir, capture_output=True, text=True, timeout=30,
+        )
+    finally:
+        if os.path.exists(patch_path):
+            os.remove(patch_path)
+    if result.returncode != 0:
+        return False, result.stderr
+    return True, ""
+
+
+def _run_tests(repo_dir: str, file_path: str) -> tuple[bool | None, str]:
+    """Return (passed, output). passed=None means no test runner is mapped for this path."""
+    subdir = file_path.split("/", 1)[0]
+    cmd = _SUBPROJECT_TEST_CMDS.get(subdir)
+    if cmd is None:
+        return None, f"no automated test runner mapped for '{subdir}/' — review manually"
+
+    try:
+        result = subprocess.run(
+            cmd, cwd=os.path.join(repo_dir, subdir),
+            capture_output=True, text=True, timeout=300,
+        )
+        output = (result.stdout[-1500:] + result.stderr[-1500:])
+        return result.returncode == 0, output
+    except subprocess.TimeoutExpired:
+        return False, "test run timed out after 300s"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _open_pr(repo_url: str, github_token: str, branch: str, base_branch: str, title: str, body: str) -> str:
+    gh = Github(github_token)
+    repo = gh.get_repo(_repo_name_from_url(repo_url))
+    pr = repo.create_pull(title=title, body=body, head=branch, base=base_branch)
+    return pr.html_url
+
+
+@trace_node("apply_and_verify_fixes")
+def apply_and_verify_fixes(state: AgentState) -> AgentState:
+    """CodegenerateAgent — clones the real repo, applies each proposed fix on its
+    own branch, re-runs that subproject's real test suite, and only opens a PR
+    (never a direct commit to the target branch) when tests pass."""
+    state["status"] = "APPLYING_FIXES"
+    logger.info("[%s] apply_and_verify_fixes started", state["run_id"])
+
+    fixes = [
+        f for f in state.get("generated_fixes", [])
+        if not f.get("fix_diff", "").startswith("// Fix generation failed")
+    ]
+    if not fixes:
+        state["pr_results"] = []
+        return state
+
+    repo_url = state["repo_url"]
+    github_token = state["github_token"]
+    commit_sha = state["commit_sha"]
+    explanation_map = {d["title"]: d.get("ai_explanation", "") for d in state.get("explained_defects", [])}
+
+    try:
+        default_branch = Github(github_token).get_repo(_repo_name_from_url(repo_url)).default_branch
+    except Exception as exc:
+        logger.warning("[%s] Could not resolve default branch, assuming 'main': %s", state["run_id"], _sanitize(str(exc)))
+        default_branch = "main"
+
+    pr_results: list[dict] = []
+
+    with tempfile.TemporaryDirectory(prefix="qaip_autofix_") as tmp_dir:
+        try:
+            _clone_repo(repo_url, github_token, commit_sha, tmp_dir)
+        except Exception as exc:
+            logger.warning("[%s] Clone failed, no fixes applied: %s", state["run_id"], _sanitize(str(exc)))
+            state["pr_results"] = [{"status": "clone_failed", "detail": _sanitize(str(exc))}]
+            return state
+
+        for fix in fixes:
+            file_path = fix["file_path"]
+            defect_title = fix["defect_title"]
+            branch = _slugify_branch(state["run_id"], defect_title)
+            why = explanation_map.get(defect_title, "")
+
+            entry: dict = {
+                "file_path": file_path,
+                "defect_title": defect_title,
+                "severity": fix.get("severity", ""),
+                "branch": branch,
+                "why": why[:800],
+            }
+
+            try:
+                subprocess.run(["git", "checkout", "--quiet", commit_sha], cwd=tmp_dir, check=True, timeout=30, capture_output=True, text=True)
+                subprocess.run(["git", "checkout", "--quiet", "-b", branch], cwd=tmp_dir, check=True, timeout=30, capture_output=True, text=True)
+            except Exception as exc:
+                entry["status"] = "branch_failed"
+                entry["detail"] = _sanitize(str(exc))
+                pr_results.append(entry)
+                continue
+
+            applied, apply_err = _apply_diff(tmp_dir, fix["fix_diff"])
+            if not applied:
+                entry["status"] = "apply_failed"
+                entry["detail"] = _sanitize(apply_err)
+                pr_results.append(entry)
+                logger.info("[%s] Fix for %s did not apply cleanly, skipped", state["run_id"], file_path)
+                continue
+
+            passed, test_output = _run_tests(tmp_dir, file_path)
+            entry["tests_passed"] = passed
+
+            if passed is False:
+                entry["status"] = "tests_failed"
+                entry["detail"] = _sanitize(test_output)
+                pr_results.append(entry)
+                logger.info("[%s] Fix for %s failed retest, skipped", state["run_id"], file_path)
+                continue
+
+            try:
+                subprocess.run(["git", "add", file_path], cwd=tmp_dir, check=True, timeout=15, capture_output=True, text=True)
+                subprocess.run(
+                    ["git", "-c", "user.email=qaip-bot@local", "-c", "user.name=QAIP CodegenerateAgent",
+                     "commit", "--quiet", "-m", f"Auto-fix: {defect_title}"],
+                    cwd=tmp_dir, check=True, timeout=15, capture_output=True, text=True,
+                )
+                subprocess.run(["git", "push", "--quiet", "origin", branch], cwd=tmp_dir, check=True, timeout=60, capture_output=True, text=True)
+            except Exception as exc:
+                entry["status"] = "push_failed"
+                entry["detail"] = _sanitize(str(exc))
+                pr_results.append(entry)
+                continue
+
+            verify_line = (
+                "Verification: existing test suite passed after the fix."
+                if passed else
+                "Verification: no automated test runner mapped for this path — review manually."
+            )
+            body = (
+                f"Automated fix proposed by QAIP CodegenerateAgent.\n\n"
+                f"**Defect:** {defect_title} (`{fix.get('severity', '')}`)\n"
+                f"**File:** `{file_path}`\n\n"
+                f"**Why:**\n{why or 'See linked run report.'}\n\n"
+                f"{verify_line}\n\n"
+                f"To roll back: close this PR without merging — the target branch is untouched. "
+                f"If already merged, `git revert` this PR's merge commit."
+            )
+            try:
+                pr_url = _open_pr(repo_url, github_token, branch, default_branch,
+                                   title=f"Auto-fix: {defect_title}", body=body)
+                entry["status"] = "pr_opened"
+                entry["pr_url"] = pr_url
+                logger.info("[%s] Opened PR for %s: %s", state["run_id"], file_path, pr_url)
+            except Exception as exc:
+                entry["status"] = "pr_failed"
+                entry["detail"] = _sanitize(str(exc))
+
+            pr_results.append(entry)
+
+    state["pr_results"] = pr_results
+    logger.info("[%s] apply_and_verify_fixes complete: %d result(s)", state["run_id"], len(pr_results))
+    return state
+
+
+# ---------------------------------------------------------------------------
 # Node 7 — dispatch_results
 # ---------------------------------------------------------------------------
 _JIRA_SEVERITY_MAP = {"P0": "Highest", "P1": "High", "P2": "Medium", "P3": "Low"}
@@ -761,6 +1054,8 @@ def _save_report(state: AgentState) -> str:
         "generated_tests": state.get("generated_tests", []),
         "defects": state.get("defects", []),
         "explained_defects": state.get("explained_defects", []),
+        "generated_fixes": state.get("generated_fixes", []),
+        "pr_results": state.get("pr_results", []),
     }
     path = f"/tmp/testmind_report_{run_id}.json"
     try:
@@ -886,6 +1181,48 @@ def _post_slack(state: AgentState) -> dict:
         return {"slack": f"failed: {exc}"}
 
 
+def _post_autofix_audit(state: AgentState) -> dict:
+    """Persist this run's auto-fix attempts (pr_results) to the backend's audit
+    table so they're queryable later, instead of only living in the per-run
+    JSON report. Non-blocking — a failure here never fails the pipeline."""
+    pr_results = state.get("pr_results", [])
+    if not pr_results:
+        return {"autofix_audit": "skipped — no fix attempts this run"}
+
+    backend_url = os.getenv("BACKEND_URL", "http://backend:8080")
+    payload = {
+        "runId": state["run_id"],
+        "projectId": state["project_id"],
+        "repoUrl": state["repo_url"],
+        "commitSha": state["commit_sha"],
+        "entries": [
+            {
+                "filePath": r.get("file_path", ""),
+                "defectTitle": r.get("defect_title", ""),
+                "severity": r.get("severity", ""),
+                "branch": r.get("branch", ""),
+                "why": r.get("why", ""),
+                "testsPassed": r.get("tests_passed"),
+                "status": r.get("status", ""),
+                "prUrl": r.get("pr_url", ""),
+                "detail": r.get("detail", ""),
+            }
+            for r in pr_results
+        ],
+    }
+
+    try:
+        resp = requests.post(f"{backend_url}/api/autofix-audit", json=payload, timeout=15)
+        if resp.status_code in (200, 201, 204):
+            logger.info("[%s] autofix audit ingested (%d entries)", state["run_id"], len(pr_results))
+            return {"autofix_audit": "ok"}
+        logger.warning("[%s] autofix audit ingest HTTP %s", state["run_id"], resp.status_code)
+        return {"autofix_audit": f"http_{resp.status_code}"}
+    except Exception as exc:
+        logger.warning("[%s] autofix audit ingest failed: %s", state["run_id"], exc)
+        return {"autofix_audit": f"failed: {exc}"}
+
+
 def _callback_backend(state: AgentState) -> dict:
     backend_url = os.getenv("BACKEND_URL", "http://backend:8080")
     run_id = state["run_id"]
@@ -937,6 +1274,10 @@ def dispatch_results(state: AgentState) -> AgentState:
         backend_result = _callback_backend(state)
         results.update(backend_result)
 
+        # e) Persist auto-fix audit trail (non-blocking)
+        audit_result = _post_autofix_audit(state)
+        results.update(audit_result)
+
         state["dispatch_results"] = results
         state["status"] = "COMPLETED"
         logger.info("[%s] dispatch_results complete: %s", state["run_id"], results)
@@ -971,6 +1312,8 @@ def build_graph() -> StateGraph:
     graph.add_node("generate_tests", generate_tests)
     graph.add_node("detect_defects", detect_defects)
     graph.add_node("explain_and_score", explain_and_score)
+    graph.add_node("generate_fixes", generate_fixes)
+    graph.add_node("apply_and_verify_fixes", apply_and_verify_fixes)
     graph.add_node("dispatch_results", dispatch_results)
 
     graph.set_entry_point("fetch_codebase")
@@ -983,7 +1326,9 @@ def build_graph() -> StateGraph:
         ("retrieve_context", "generate_tests"),
         ("generate_tests", "detect_defects"),
         ("detect_defects", "explain_and_score"),
-        ("explain_and_score", "dispatch_results"),
+        ("explain_and_score", "generate_fixes"),
+        ("generate_fixes", "apply_and_verify_fixes"),
+        ("apply_and_verify_fixes", "dispatch_results"),
     ]:
         graph.add_conditional_edges(
             src,

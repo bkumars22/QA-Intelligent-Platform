@@ -20,7 +20,10 @@ from agents.langgraph_agent import (
     generate_tests,
     detect_defects,
     explain_and_score,
+    generate_fixes,
+    apply_and_verify_fixes,
     dispatch_results,
+    _post_autofix_audit,
     _extract_features,
     _consistency_score,
 )
@@ -42,6 +45,8 @@ def _make_state(**overrides) -> AgentState:
         "generated_tests": [],
         "defects": [],
         "explained_defects": [],
+        "generated_fixes": [],
+        "pr_results": [],
         "dispatch_results": {},
         "error": "",
         "status": "QUEUED",
@@ -604,6 +609,261 @@ class TestExplainAndScore:
 
         assert result["error"] == ""
         assert result["explained_defects"][0]["consistency_score"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Node 6.5 — generate_fixes (CodegenerateAgent)
+# ---------------------------------------------------------------------------
+class TestGenerateFixes:
+    def _defect(self, path: str, severity: str = "P0", title: str = "SQL injection") -> dict:
+        return {
+            "title": title,
+            "severity": severity,
+            "description": "Bad query",
+            "stack_trace": "",
+            "file_path": path,
+            "ai_explanation": "String interpolation used directly in SQL query.",
+            "consistency_score": 0.8,
+        }
+
+    def _file_info(self, path: str, content: str = "def foo(): pass") -> dict:
+        return {"path": path, "content": content, "diff": "", "lines_changed": 10}
+
+    @patch("agents.langgraph_agent.Groq")
+    def test_generate_fixes_calls_groq_for_high_severity(self, mock_groq_class):
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_groq_response(
+            "--- a/src/db.py\n+++ b/src/db.py\n@@ -1 +1 @@\n-bad\n+good"
+        )
+        mock_groq_class.return_value = mock_client
+
+        defects = [self._defect("src/db.py", severity="P0")]
+        file_list = [self._file_info("src/db.py", "result = db.execute(query)")]
+        state = _make_state(explained_defects=defects, file_list=file_list)
+        result = generate_fixes(state)
+
+        mock_client.chat.completions.create.assert_called_once()
+        assert len(result["generated_fixes"]) == 1
+        assert result["generated_fixes"][0]["file_path"] == "src/db.py"
+
+    @patch("agents.langgraph_agent.Groq")
+    def test_generate_fixes_skips_low_severity(self, mock_groq_class):
+        mock_client = MagicMock()
+        mock_groq_class.return_value = mock_client
+
+        defects = [self._defect("src/notes.py", severity="P3")]
+        file_list = [self._file_info("src/notes.py")]
+        state = _make_state(explained_defects=defects, file_list=file_list)
+        result = generate_fixes(state)
+
+        mock_client.chat.completions.create.assert_not_called()
+        assert result["generated_fixes"] == []
+
+    @patch("agents.langgraph_agent.Groq")
+    def test_generate_fixes_respects_top_5_limit(self, mock_groq_class):
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_groq_response("diff")
+        mock_groq_class.return_value = mock_client
+
+        defects = [self._defect(f"src/mod_{i}.py", severity="P1") for i in range(10)]
+        file_list = [self._file_info(f"src/mod_{i}.py") for i in range(10)]
+        state = _make_state(explained_defects=defects, file_list=file_list)
+        result = generate_fixes(state)
+
+        assert mock_client.chat.completions.create.call_count == 5
+        assert len(result["generated_fixes"]) == 5
+
+    @patch("agents.langgraph_agent.Groq")
+    def test_generate_fixes_skips_defect_with_no_file_content(self, mock_groq_class):
+        mock_client = MagicMock()
+        mock_groq_class.return_value = mock_client
+
+        defects = [self._defect("src/missing.py", severity="P0")]
+        state = _make_state(explained_defects=defects, file_list=[])
+        result = generate_fixes(state)
+
+        mock_client.chat.completions.create.assert_not_called()
+        assert result["generated_fixes"] == []
+
+    @patch("agents.langgraph_agent.Groq")
+    def test_generate_fixes_handles_llm_failure_gracefully(self, mock_groq_class):
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("Rate limit exceeded")
+        mock_groq_class.return_value = mock_client
+
+        defects = [self._defect("src/service.py", severity="P0")]
+        file_list = [self._file_info("src/service.py")]
+        state = _make_state(explained_defects=defects, file_list=file_list)
+        result = generate_fixes(state)
+
+        assert len(result["generated_fixes"]) == 1
+        assert "Fix generation failed" in result["generated_fixes"][0]["fix_diff"]
+        assert result["error"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Node 6.6 — apply_and_verify_fixes (CodegenerateAgent: clone/patch/retest/PR)
+# ---------------------------------------------------------------------------
+class TestApplyAndVerifyFixes:
+    def _fix(self, path="ai-engine/foo.py", title="SQL injection", severity="P0", diff="--- a\n+++ b\n"):
+        return {"file_path": path, "defect_title": title, "severity": severity, "fix_diff": diff}
+
+    def test_no_fixes_returns_empty(self):
+        state = _make_state(generated_fixes=[])
+        result = apply_and_verify_fixes(state)
+        assert result["pr_results"] == []
+
+    @patch("agents.langgraph_agent._clone_repo")
+    def test_skips_failed_generation_placeholder(self, mock_clone):
+        fixes = [self._fix(diff="// Fix generation failed for x.py: boom")]
+        state = _make_state(generated_fixes=fixes)
+        result = apply_and_verify_fixes(state)
+
+        assert result["pr_results"] == []
+        mock_clone.assert_not_called()
+
+    @patch("agents.langgraph_agent._open_pr")
+    @patch("agents.langgraph_agent._run_tests")
+    @patch("agents.langgraph_agent._apply_diff")
+    @patch("agents.langgraph_agent._clone_repo")
+    @patch("agents.langgraph_agent.subprocess.run")
+    @patch("agents.langgraph_agent.Github")
+    def test_opens_pr_when_tests_pass(self, mock_gh_class, mock_run, mock_clone, mock_apply, mock_tests, mock_pr):
+        mock_gh_class.return_value.get_repo.return_value.default_branch = "main"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_apply.return_value = (True, "")
+        mock_tests.return_value = (True, "ok")
+        mock_pr.return_value = "https://github.com/bkumars22/QA-Intelligent-Platform/pull/1"
+
+        fixes = [self._fix()]
+        state = _make_state(
+            generated_fixes=fixes,
+            explained_defects=[{"title": "SQL injection", "ai_explanation": "bad query"}],
+        )
+        result = apply_and_verify_fixes(state)
+
+        assert len(result["pr_results"]) == 1
+        entry = result["pr_results"][0]
+        assert entry["status"] == "pr_opened"
+        assert entry["pr_url"] == "https://github.com/bkumars22/QA-Intelligent-Platform/pull/1"
+        assert entry["why"] == "bad query"
+        assert entry["tests_passed"] is True
+
+    @patch("agents.langgraph_agent._open_pr")
+    @patch("agents.langgraph_agent._run_tests")
+    @patch("agents.langgraph_agent._apply_diff")
+    @patch("agents.langgraph_agent._clone_repo")
+    @patch("agents.langgraph_agent.subprocess.run")
+    @patch("agents.langgraph_agent.Github")
+    def test_skips_pr_when_tests_fail(self, mock_gh_class, mock_run, mock_clone, mock_apply, mock_tests, mock_pr):
+        mock_gh_class.return_value.get_repo.return_value.default_branch = "main"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_apply.return_value = (True, "")
+        mock_tests.return_value = (False, "1 failed")
+
+        state = _make_state(generated_fixes=[self._fix()])
+        result = apply_and_verify_fixes(state)
+
+        assert result["pr_results"][0]["status"] == "tests_failed"
+        mock_pr.assert_not_called()
+
+    @patch("agents.langgraph_agent._open_pr")
+    @patch("agents.langgraph_agent._run_tests")
+    @patch("agents.langgraph_agent._apply_diff")
+    @patch("agents.langgraph_agent._clone_repo")
+    @patch("agents.langgraph_agent.subprocess.run")
+    @patch("agents.langgraph_agent.Github")
+    def test_opens_pr_when_no_test_runner_mapped(self, mock_gh_class, mock_run, mock_clone, mock_apply, mock_tests, mock_pr):
+        mock_gh_class.return_value.get_repo.return_value.default_branch = "main"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_apply.return_value = (True, "")
+        mock_tests.return_value = (None, "no runner mapped")
+        mock_pr.return_value = "https://github.com/bkumars22/QA-Intelligent-Platform/pull/2"
+
+        state = _make_state(generated_fixes=[self._fix(path="frontend/src/App.tsx")])
+        result = apply_and_verify_fixes(state)
+
+        assert result["pr_results"][0]["status"] == "pr_opened"
+        assert result["pr_results"][0]["tests_passed"] is None
+
+    @patch("agents.langgraph_agent._apply_diff")
+    @patch("agents.langgraph_agent._clone_repo")
+    @patch("agents.langgraph_agent.subprocess.run")
+    @patch("agents.langgraph_agent.Github")
+    def test_apply_failure_skips_tests(self, mock_gh_class, mock_run, mock_clone, mock_apply):
+        mock_gh_class.return_value.get_repo.return_value.default_branch = "main"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_apply.return_value = (False, "patch does not apply")
+
+        with patch("agents.langgraph_agent._run_tests") as mock_tests:
+            state = _make_state(generated_fixes=[self._fix()])
+            result = apply_and_verify_fixes(state)
+            mock_tests.assert_not_called()
+
+        assert result["pr_results"][0]["status"] == "apply_failed"
+
+    @patch("agents.langgraph_agent._clone_repo", side_effect=Exception("network down"))
+    @patch("agents.langgraph_agent.Github")
+    def test_clone_failure_reports_status(self, mock_gh_class, mock_clone):
+        mock_gh_class.return_value.get_repo.return_value.default_branch = "main"
+        state = _make_state(generated_fixes=[self._fix()])
+        result = apply_and_verify_fixes(state)
+        assert result["pr_results"][0]["status"] == "clone_failed"
+
+
+# ---------------------------------------------------------------------------
+# _post_autofix_audit (persists pr_results to the backend audit table)
+# ---------------------------------------------------------------------------
+class TestPostAutofixAudit:
+    def test_skips_when_no_pr_results(self, monkeypatch):
+        import agents.langgraph_agent as agent_module
+        called = []
+        monkeypatch.setattr(agent_module.requests, "post", lambda *a, **k: called.append(1))
+
+        state = _make_state(pr_results=[])
+        result = _post_autofix_audit(state)
+
+        assert called == []
+        assert result["autofix_audit"] == "skipped — no fix attempts this run"
+
+    def test_posts_camel_case_payload(self, monkeypatch):
+        import agents.langgraph_agent as agent_module
+        captured = {}
+
+        def fake_post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            return MagicMock(status_code=200)
+
+        monkeypatch.setattr(agent_module.requests, "post", fake_post)
+
+        pr_results = [{
+            "file_path": "ai-engine/foo.py", "defect_title": "SQL injection", "severity": "P0",
+            "branch": "auto-fix/abc-sql", "why": "bad query", "tests_passed": True,
+            "status": "pr_opened", "pr_url": "https://github.com/x/y/pull/1", "detail": "",
+        }]
+        state = _make_state(pr_results=pr_results)
+        result = _post_autofix_audit(state)
+
+        assert result["autofix_audit"] == "ok"
+        assert captured["url"].endswith("/api/autofix-audit")
+        entry = captured["json"]["entries"][0]
+        assert entry["filePath"] == "ai-engine/foo.py"
+        assert entry["testsPassed"] is True
+        assert entry["prUrl"] == "https://github.com/x/y/pull/1"
+
+    def test_handles_request_failure_gracefully(self, monkeypatch):
+        import agents.langgraph_agent as agent_module
+
+        def fake_post(*a, **k):
+            raise Exception("connection refused")
+
+        monkeypatch.setattr(agent_module.requests, "post", fake_post)
+
+        state = _make_state(pr_results=[{"file_path": "f.py", "defect_title": "t", "status": "pr_opened"}])
+        result = _post_autofix_audit(state)
+
+        assert "failed" in result["autofix_audit"]
 
 
 # ---------------------------------------------------------------------------
