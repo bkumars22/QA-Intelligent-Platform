@@ -51,6 +51,9 @@ public class SecurityConfig {
                 // Called by the performance.yml workflow, not a logged-in user —
                 // guarded internally by X-Performance-Secret instead of a JWT.
                 .requestMatchers(HttpMethod.POST, "/api/performance/results").permitAll()
+                // Called by the Python AI engine's apply_and_verify_fixes node, not a
+                // logged-in user — same trust model as /api/pipeline/callback.
+                .requestMatchers(HttpMethod.POST, "/api/autofix-audit").permitAll()
                 .anyRequest().authenticated())
             .headers(headers -> headers
                 .frameOptions(frame -> frame.deny())
