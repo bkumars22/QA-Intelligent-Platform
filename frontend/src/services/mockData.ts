@@ -1238,3 +1238,64 @@ test.describe('SCIP-100 — RBAC Access Control', () => {
 export function getMockPipelineRun(id: number): PipelineRun | undefined {
   return Object.values(mockPipelineRuns).flat().find((r) => r.id === id);
 }
+
+export interface AutofixAuditEntry {
+  id: number;
+  runId: string;
+  projectId: number;
+  repoUrl: string;
+  commitSha: string;
+  filePath: string;
+  defectTitle: string;
+  severity: 'P0' | 'P1' | 'P2' | 'P3';
+  branch: string;
+  why: string;
+  testsPassed: boolean | null;
+  status: 'pr_opened' | 'tests_failed' | 'apply_failed' | 'branch_failed' | 'push_failed' | 'pr_failed' | 'clone_failed';
+  prUrl: string;
+  detail: string;
+  createdAt: string;
+}
+
+export const mockAutofixAudit: AutofixAuditEntry[] = [
+  {
+    id: 1, runId: 'a1b2c3d4-0001', projectId: 1,
+    repoUrl: 'https://github.com/bkumars22/QA-Intelligent-Platform', commitSha: 'e5dbf1e9',
+    filePath: 'ai-engine/rag/retriever.py', defectTitle: 'Unhandled HTTP call in retriever.py',
+    severity: 'P1', branch: 'auto-fix/a1b2c3d4-unhandled-http-call',
+    why: 'The pgvector similarity query calls out over HTTP with no surrounding try/except, so a transient network blip during retrieve_context would raise an unhandled exception and fail the whole run instead of falling back to zero-shot generation.',
+    testsPassed: true, status: 'pr_opened',
+    prUrl: 'https://github.com/bkumars22/QA-Intelligent-Platform/pull/41', detail: '',
+    createdAt: '2026-08-05T09:14:00Z',
+  },
+  {
+    id: 2, runId: 'a1b2c3d4-0001', projectId: 1,
+    repoUrl: 'https://github.com/bkumars22/QA-Intelligent-Platform', commitSha: 'e5dbf1e9',
+    filePath: 'backend/src/main/java/com/testmind/service/ProjectService.java', defectTitle: 'Missing token/credential validation in ProjectService.java',
+    severity: 'P0', branch: 'auto-fix/a1b2c3d4-missing-token-validation',
+    why: 'connect-repo stores a raw GitHub PAT without verifying it against the GitHub API first, so an invalid or already-revoked token is accepted silently and only fails much later at analysis time.',
+    testsPassed: false, status: 'tests_failed',
+    prUrl: '', detail: '2 tests failed in ProjectServiceTest: testConnectRepo_InvalidToken, testConnectRepo_TokenScopeCheck',
+    createdAt: '2026-08-05T09:15:32Z',
+  },
+  {
+    id: 3, runId: 'f7e8d9c0-0002', projectId: 1,
+    repoUrl: 'https://github.com/bkumars22/QA-Intelligent-Platform', commitSha: '0a99f43',
+    filePath: 'ai-engine/cost_tracker.py', defectTitle: 'Database write without transaction handling in cost_tracker.py',
+    severity: 'P2', branch: 'auto-fix/f7e8d9c0-db-write-no-transaction',
+    why: 'record() writes a cost event row with no explicit transaction boundary, so a mid-write failure could leave a partial row rather than rolling back cleanly.',
+    testsPassed: null, status: 'pr_opened',
+    prUrl: 'https://github.com/bkumars22/QA-Intelligent-Platform/pull/39', detail: 'no automated test runner mapped for this path — review manually',
+    createdAt: '2026-08-04T18:02:11Z',
+  },
+  {
+    id: 4, runId: 'f7e8d9c0-0002', projectId: 1,
+    repoUrl: 'https://github.com/bkumars22/QA-Intelligent-Platform', commitSha: '0a99f43',
+    filePath: 'ai-engine/agents/pipeline_agent.py', defectTitle: 'Potential SQL injection in pipeline_agent.py',
+    severity: 'P0', branch: 'auto-fix/f7e8d9c0-sql-injection',
+    why: 'A query filter is built with an f-string directly embedding a user-controlled gap_category value instead of a parameterized query.',
+    testsPassed: null, status: 'apply_failed',
+    prUrl: '', detail: 'patch does not apply: context mismatch at line 118 (file changed since generation)',
+    createdAt: '2026-08-04T18:03:47Z',
+  },
+];

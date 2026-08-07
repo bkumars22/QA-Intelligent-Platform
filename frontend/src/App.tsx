@@ -13,6 +13,7 @@ import { PipelineDetailPage } from './pages/PipelineDetailPage';
 import { PipelineExecutionPage } from './pages/PipelineExecutionPage';
 import { PipelineCodePage } from './pages/PipelineCodePage';
 import { PerformancePage } from './pages/PerformancePage';
+import { AutofixAuditPage } from './pages/AutofixAuditPage';
 import type { ReactNode } from 'react';
 
 interface ProtectedRouteProps {
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="/pipeline/:id/executions" element={<PipelineExecutionPage />} />
         <Route path="/pipeline/:id/code" element={<PipelineCodePage />} />
         <Route path="/performance" element={<PerformancePage />} />
+        <Route path="/autofix-audit" element={<AutofixAuditPage />} />
       </Route>
 
       {/* Default redirect */}

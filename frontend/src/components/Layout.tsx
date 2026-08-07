@@ -8,6 +8,7 @@ import {
   Workflow,
   ShieldCheck,
   Gauge,
+  GitPullRequest,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
   { to: '/projects', label: 'Projects', icon: <FolderKanban size={18} /> },
   { to: '/pipeline', label: 'QA Pipeline', icon: <Workflow size={18} /> },
   { to: '/performance', label: 'Performance', icon: <Gauge size={18} /> },
+  { to: '/autofix-audit', label: 'Auto-Fix Audit', icon: <GitPullRequest size={18} /> },
 ];
 
 function SecurityShield() {
