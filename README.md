@@ -40,7 +40,9 @@ QAIP is a **fully autonomous QA intelligence engine** that:
 5. **Generates Playwright TypeScript tests** using Groq Llama-3.3-70b, informed by historical patterns
 6. **Detects defects** by scanning changed files for vulnerability patterns
 7. **Explains defects** with AI root-cause analysis and severity scoring
-8. **Stores everything in RAG** so the next sprint starts smarter
+8. **Generates a fix** (CodegenerateAgent) for each P0/P1 defect as a unified diff
+9. **Applies, retests, and PRs the fix** — clones the repo, applies the patch on its own branch, re-runs the real test suite, and only opens a PR if it passes. Nothing is ever auto-merged.
+10. **Stores everything in RAG** (and every fix attempt in a queryable audit trail) so the next sprint starts smarter
 
 ---
 
@@ -78,6 +80,31 @@ Better test code → stored back into RAG
 
 ---
 
+## CodegenerateAgent — Auto-Fix, Retest, PR
+
+For every P0/P1 defect `explain_and_score` finds, QAIP proposes and verifies an actual fix —
+not just a suggestion, a tested one:
+
+```
+Defect + AI explanation
+       ↓
+[generate_fixes node] — Groq proposes a unified diff
+       ↓
+[apply_and_verify_fixes node]
+  1. clone the repo at that commit, on a fresh auto-fix/<run>-<slug> branch
+  2. apply the diff
+  3. re-run that subproject's real test suite (pytest / mvnw test)
+  4. tests pass → push branch, open a PR
+     tests fail / patch doesn't apply → stop, nothing is pushed
+```
+
+Nothing is ever committed to the target branch directly. Rollback is structural: close the PR
+and the repo is untouched, or `git revert` the merge commit if it was already merged. Every
+attempt — opened, failed, or skipped — is recorded for audit at `POST/GET /api/autofix-audit`
+and browsable on the **Auto-Fix Audit** dashboard page.
+
+---
+
 ## Architecture
 
 ```
@@ -99,24 +126,28 @@ Better test code → stored back into RAG
 
 ```
 
-### LangGraph Pipeline (8 nodes)
+### LangGraph Pipeline (10 nodes)
 
 ```
 fetch_codebase
      
-score_risk          ← IsolationForest anomaly detection
+score_risk              ← IsolationForest anomaly detection
      
-identify_gaps       ← files with no test coverage
+identify_gaps           ← files with no test coverage
      
-retrieve_context    ← NEW: pgvector RAG, similar past tests
+retrieve_context        ← pgvector RAG, similar past tests
      
-generate_tests      ← Groq Llama + RAG few-shot examples
+generate_tests          ← Groq Llama + RAG few-shot examples
      
-detect_defects      ← pattern-based vulnerability scanning
+detect_defects          ← pattern-based vulnerability scanning
      
-explain_and_score   ← AI root-cause analysis per defect
+explain_and_score       ← AI root-cause analysis per defect
      
-dispatch_results    ← saves to PostgreSQL, triggers auto-ingest
+generate_fixes          ← CodegenerateAgent: Groq proposes a diff for each P0/P1 defect
+     
+apply_and_verify_fixes  ← clone, apply patch, re-run real tests, PR only if they pass
+     
+dispatch_results        ← saves to PostgreSQL, triggers auto-ingest + audit trail
 ```
 
 > Scaling idea for higher commit volume: [hybrid cloud architecture proposal](docs/architecture/hybrid-cloud-proposal/README.md) (Kafka + serverless AI inference) — a design reference, not implemented.
@@ -132,7 +163,7 @@ dispatch_results    ← saves to PostgreSQL, triggers auto-ingest
 | AI Engine | Python 3.11, FastAPI, LangGraph |
 | LLM | Groq API — Llama-3.3-70b-versatile (free, default) + Azure OpenAI (optional, defect explanations) |
 | RAG | pgvector + sentence-transformers all-MiniLM-L6-v2 |
-| Database | PostgreSQL 15 (Railway) + Flyway migrations (V1–V22) |
+| Database | PostgreSQL 15 (Railway) + Flyway migrations (V1–V26) |
 | Testing | Playwright TypeScript, JUnit 5, Testcontainers |
 | CI/CD | GitHub Actions → Railway (backend), GitHub Pages (frontend) |
 
@@ -146,6 +177,10 @@ dispatch_results    ← saves to PostgreSQL, triggers auto-ingest
 | V10–V18 | Story analysis, gap reports, generated tests, automation |
 | V19–V21 | Seed data: SCIP/ARIA projects, admin users |
 | **V22** | **RAG tables: pgvector extension, qaip_memory, rag_documents, scip_supplier_memory, aria_textbook_memory, aria_student_progress, zentravix_org_knowledge** |
+| V23 | Add `github_token` to `framework_profiles` |
+| V24 | `performance_test_results` — historical load-test trend data |
+| V25 | Add `system` column to `performance_test_results` (multi-project support) |
+| **V26** | **`autofix_audit` — CodegenerateAgent auto-fix attempt history** |
 
 ---
 
@@ -172,9 +207,10 @@ QAIP exposes Model Context Protocol servers for Claude integration:
 ```env
 DATABASE_URL=postgresql://...           # Railway PostgreSQL
 GROQ_API_KEY=gsk_...                   # Free at console.groq.com
-GITHUB_TOKEN=ghp_...                   # GitHub PAT for repo access
+GITHUB_TOKEN=ghp_...                   # Needs repo + PR scope — CodegenerateAgent pushes branches and opens PRs
 ANTHROPIC_API_KEY=sk-ant-...           # Optional: Claude for explain
 EMBED_MODEL=all-MiniLM-L6-v2          # Default embedding model
+BACKEND_URL=http://backend:8080       # Where the AI engine posts run results + autofix audit
 ```
 
 ---

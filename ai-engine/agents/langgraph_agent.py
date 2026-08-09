@@ -1,14 +1,17 @@
 """
-TestMind — 7-node LangGraph agent.
+TestMind — 10-node LangGraph agent.
 
 Nodes (in order):
-  1. fetch_codebase     — pull changed files from GitHub
-  2. score_risk         — IsolationForest anomaly & risk scoring
-  3. identify_gaps      — find files with no corresponding test
-  4. generate_tests     — LLM-generated Playwright TS tests
-  5. detect_defects     — static + heuristic defect detection
-  6. explain_and_score  — LLM explanations with consistency scoring
-  7. dispatch_results   — save report, Jira, Slack, backend callback
+  1.  fetch_codebase          — pull changed files from GitHub
+  2.  score_risk              — IsolationForest anomaly & risk scoring
+  3.  identify_gaps           — find files with no corresponding test
+  3.5 retrieve_context        — pgvector RAG, similar past test cases
+  4.  generate_tests          — LLM-generated Playwright TS tests
+  5.  detect_defects          — static + heuristic defect detection
+  6.  explain_and_score       — LLM explanations with consistency scoring
+  6.5 generate_fixes          — CodegenerateAgent: propose a diff per P0/P1 defect
+  6.6 apply_and_verify_fixes  — clone, apply, retest, PR only if tests pass
+  7.  dispatch_results        — save report, Jira, Slack, backend callback, audit trail
 """
 
 from __future__ import annotations
