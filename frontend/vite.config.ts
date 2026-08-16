@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 const isGHPages = process.env.GITHUB_PAGES === 'true'
 
 export default defineConfig({
-  base: isGHPages ? '/QA-Intelligent-Platform/' : '/',
+  base: '/',
   plugins: [react()],
   server: {
     port: 3000,
