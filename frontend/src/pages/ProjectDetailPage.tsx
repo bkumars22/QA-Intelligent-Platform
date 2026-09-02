@@ -17,6 +17,7 @@ import {
   getDefects,
   getRiskScores,
   getMcpStatus,
+  isDemoMode,
 } from '../services/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { SeverityBadge } from '../components/SeverityBadge';
@@ -120,14 +121,18 @@ export function ProjectDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{project?.name ?? `Project #${projectId}`}</h1>
           {project?.repoUrl && (
-            <a
-              href={project.repoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-gray-400 hover:text-gray-600"
-            >
-              {project.repoUrl}
-            </a>
+            isDemoMode() ? (
+              <span className="text-xs text-gray-400">Configured via backend</span>
+            ) : (
+              <a
+                href={project.repoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                {project.repoUrl}
+              </a>
+            )
           )}
         </div>
       </div>

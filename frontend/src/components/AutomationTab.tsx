@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { automationApi } from '../services/automationApi';
 import type { FrameworkProfile, AutomationExecution, AutomationResult } from '../services/automationApi';
+import { isDemoMode } from '../services/api';
 import { FrameworkExplorer } from './FrameworkExplorer';
 
 // ─── Framework type cards ─────────────────────────────────────────────────────
@@ -261,8 +262,12 @@ export function AutomationTab({
   suggestedFile?: string | null;
 }) {
   const qc = useQueryClient();
+  const demoMode = isDemoMode();
   const [selectedFw, setSelectedFw] = useState<FwType>('PLAYWRIGHT');
-  const [repoUrl, setRepoUrl] = useState(projectRepoUrl ?? '');
+  // In demo mode, never seed this field from the real project's repo URL --
+  // demo projects are pre-connected already (see mockFrameworks), so this
+  // form has nothing legitimate to do in demo mode anyway.
+  const [repoUrl, setRepoUrl] = useState(demoMode ? '' : (projectRepoUrl ?? ''));
   const [branch, setBranch] = useState('main');
   const [githubToken, setGithubToken] = useState('');
   const [suiteName, setSuiteName] = useState('');
@@ -373,52 +378,63 @@ export function AutomationTab({
           })}
         </div>
 
-        {/* Connection form */}
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Framework GitHub Repo URL</label>
-            <input
-              type="url"
-              value={repoUrl}
-              onChange={e => setRepoUrl(e.target.value)}
-              placeholder="https://github.com/yourorg/your-playwright-framework"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-            />
+        {/* Connection form -- hidden in demo mode once a framework is already
+            connected (every demo project is pre-connected via mock data, so
+            this form has nothing real to do there, and its repo-URL field
+            would otherwise expose the demo project's real backing GitHub
+            repo). Real (non-demo) usage is unaffected. */}
+        {demoMode && connectedProfile ? (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+            Backend configuration: this demo project's automation framework is pre-connected
+            via server-side config — no manual setup needed here.
           </div>
-          <div className="grid grid-cols-2 gap-3">
+        ) : (
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Branch</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Framework GitHub Repo URL</label>
               <input
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                type="url"
+                value={repoUrl}
+                onChange={e => setRepoUrl(e.target.value)}
+                placeholder="https://github.com/yourorg/your-playwright-framework"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">GitHub Token (optional)</label>
-              <input
-                type="password"
-                value={githubToken}
-                onChange={e => setGithubToken(e.target.value)}
-                placeholder="ghp_..."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Branch</label>
+                <input
+                  value={branch}
+                  onChange={e => setBranch(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">GitHub Token (optional)</label>
+                <input
+                  type="password"
+                  value={githubToken}
+                  onChange={e => setGithubToken(e.target.value)}
+                  placeholder="ghp_..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                />
+              </div>
             </div>
+            <button
+              onClick={() => connectMut.mutate()}
+              disabled={!repoUrl || connectMut.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              <Zap size={14} />
+              {connectMut.isPending ? 'Analysing…' : 'Connect Framework'}
+            </button>
+            {connectMut.isError && (
+              <p className="text-xs text-red-600 flex items-center gap-1">
+                <XCircle size={12} /> Connection failed. Check the repo URL and try again.
+              </p>
+            )}
           </div>
-          <button
-            onClick={() => connectMut.mutate()}
-            disabled={!repoUrl || connectMut.isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            <Zap size={14} />
-            {connectMut.isPending ? 'Analysing…' : 'Connect Framework'}
-          </button>
-          {connectMut.isError && (
-            <p className="text-xs text-red-600 flex items-center gap-1">
-              <XCircle size={12} /> Connection failed. Check the repo URL and try again.
-            </p>
-          )}
-        </div>
+        )}
 
         {/* Connected profile summary */}
         {connectedProfile?.summaryText && (

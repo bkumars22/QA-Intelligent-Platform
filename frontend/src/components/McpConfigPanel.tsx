@@ -3,8 +3,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown, ChevronRight, Save, RotateCcw, Check, AlertCircle,
 } from 'lucide-react';
-import { configureMcp } from '../services/api';
+import { configureMcp, isDemoMode } from '../services/api';
 import type { McpStatus, McpServerType } from '../types';
+
+// Demo config data links back to real personal repos (github.com/bkumars22/...)
+// as illustrative example projects -- fine as mock data, but a visitor to
+// the public demo shouldn't see those as real, clickable/copyable GitHub
+// URLs anywhere in the rendered UI. Real (non-demo) usage is unaffected.
+function redactDemoConfig(config: Record<string, string>): Record<string, string> {
+  if (!isDemoMode()) return config;
+  const redacted = { ...config };
+  for (const key of Object.keys(redacted)) {
+    if (/github\.com/i.test(redacted[key])) redacted[key] = 'configured-via-backend';
+  }
+  return redacted;
+}
 
 // ─── Per-server field definitions ────────────────────────────────────────────
 
@@ -76,7 +89,7 @@ function McpServerCard({
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>(status.config ?? {});
+  const [values, setValues] = useState<Record<string, string>>(redactDemoConfig(status.config ?? {}));
   const [savedOk, setSavedOk] = useState(false);
   const [error, setError] = useState('');
 
@@ -97,7 +110,7 @@ function McpServerCard({
   });
 
   function reset() {
-    setValues(status.config ?? {});
+    setValues(redactDemoConfig(status.config ?? {}));
     setEditing(false);
     setError('');
   }

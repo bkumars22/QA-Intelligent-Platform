@@ -44,15 +44,22 @@ function ProjectCard({ project, onAnalyze, analyzing }: ProjectCardProps) {
           >
             {project.name}
           </Link>
-          <a
-            href={project.repoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-0.5 truncate"
-          >
-            <ExternalLink size={12} />
-            {project.repoUrl}
-          </a>
+          {isDemoMode() ? (
+            <span className="flex items-center gap-1 text-xs text-gray-400 mt-0.5 truncate">
+              <ExternalLink size={12} />
+              Configured via backend
+            </span>
+          ) : (
+            <a
+              href={project.repoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-0.5 truncate"
+            >
+              <ExternalLink size={12} />
+              {project.repoUrl}
+            </a>
+          )}
         </div>
         <div className="ml-3 shrink-0">
           <StatusBadge status={project.activeTestRun ? 'RUNNING' : 'PENDING'} />

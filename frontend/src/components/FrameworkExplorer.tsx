@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { automationApi } from '../services/automationApi';
 import type { FrameworkProfile, FileNode, AutomationExecution } from '../services/automationApi';
+import { displayRepoUrl } from '../services/api';
 import { useQueryClient } from '@tanstack/react-query';
 
 // ─── FileTree ─────────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ export function FrameworkExplorer({
           <FileCode size={15} className="text-brand-600" />
           <span className="text-sm font-semibold text-gray-900">Framework Explorer</span>
           <span className="text-xs text-gray-500">
-            {profile.repoUrl.replace('https://github.com/', '')} · {profile.branch}
+            {displayRepoUrl(profile.repoUrl).replace('https://github.com/', '')} · {profile.branch}
           </span>
           <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">read-only</span>
         </div>

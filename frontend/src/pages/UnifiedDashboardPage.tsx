@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Play, ExternalLink, CheckCircle, AlertCircle, Clock, Zap } from 'lucide-react';
-import { getProjects, getDashboardStats, triggerAnalysis } from '../services/api';
+import { getProjects, getDashboardStats, triggerAnalysis, displayRepoUrl } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import type { Project } from '../types';
 import AgenticRAGChat from '../components/AgenticRAGChat';
@@ -47,7 +47,7 @@ function ProjectCard({ project, accent }: { project: Project; accent: string }) 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-bold text-gray-900 leading-snug">{project.name}</h2>
-          <p className="text-xs text-gray-400 mt-1 font-mono truncate">{project.repoUrl}</p>
+          <p className="text-xs text-gray-400 mt-1 font-mono truncate">{displayRepoUrl(project.repoUrl)}</p>
         </div>
         <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor}`}>
           {project.status ?? 'ACTIVE'}

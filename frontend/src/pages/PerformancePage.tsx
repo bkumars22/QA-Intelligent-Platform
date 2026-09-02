@@ -353,26 +353,28 @@ export function PerformancePage() {
         </div>
       )}
 
-      <div className="flex items-center gap-4">
-        <a
-          href={GITHUB_ACTIONS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-brand-600 text-sm font-medium hover:underline"
-        >
-          <ExternalLink size={13} />
-          Open the Performance Gate workflow
-        </a>
-        <a
-          href={DOCS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-brand-600 text-sm font-medium hover:underline"
-        >
-          <ExternalLink size={13} />
-          View performance testing docs
-        </a>
-      </div>
+      {!demoMode && (
+        <div className="flex items-center gap-4">
+          <a
+            href={GITHUB_ACTIONS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-brand-600 text-sm font-medium hover:underline"
+          >
+            <ExternalLink size={13} />
+            Open the Performance Gate workflow
+          </a>
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-brand-600 text-sm font-medium hover:underline"
+          >
+            <ExternalLink size={13} />
+            View performance testing docs
+          </a>
+        </div>
+      )}
     </div>
   );
 }

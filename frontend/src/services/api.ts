@@ -46,6 +46,18 @@ export function isDemoMode(): boolean {
   return _token === DEMO_TOKEN;
 }
 
+// Demo data links back to real personal repos (github.com/bkumars22/...)
+// as illustrative example projects -- fine for the mock data itself, but
+// a visitor to the public demo shouldn't see those as clickable/copyable
+// GitHub URLs anywhere in the rendered UI. Real (non-demo) usage is
+// unaffected -- a real user's own connected repo URL is expected and
+// legitimate to show there.
+export function displayRepoUrl(url?: string): string {
+  if (!url) return '';
+  if (isDemoMode() && /github\.com/i.test(url)) return 'Configured via backend';
+  return url;
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api',
   headers: { 'Content-Type': 'application/json' },
