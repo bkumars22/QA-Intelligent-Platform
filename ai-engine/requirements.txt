@@ -47,6 +47,16 @@ opentelemetry-instrumentation-httpx>=0.41b0
 # Optional: uncomment when connecting to Jaeger / Grafana Tempo
 # opentelemetry-exporter-otlp-proto-grpc>=1.20.0
 
+# Quantum-Assisted Test Selection Optimization (Prompt 12) -- QAOA over
+# a QUBO, run against the local Aer simulator by default. Real IBM
+# Quantum hardware needs qiskit-ibm-runtime too, installed separately
+# only if/when that opt-in path is actually used -- see
+# quantum_test_selection/README.md.
+qiskit>=2.0.0
+qiskit-aer>=0.17.0
+qiskit-optimization>=0.7.0
+qiskit-algorithms>=0.4.0
+
 # Test runner — ci.yml's ai-engine-test job runs `pytest ... --cov=.`,
 # which needs both installed
 pytest>=8.0.0
