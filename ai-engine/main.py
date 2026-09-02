@@ -1665,3 +1665,60 @@ async def rag_ingest_jira(payload: JiraIngestRequest):
     except Exception as exc:
         logger.warning("Jira ingest failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Quantum-Assisted Test Selection Optimization (Prompt 12)
+# ---------------------------------------------------------------------------
+
+class QuantumTestCase(BaseModel):
+    id: str
+    defect_rate: float
+    exec_time: float
+    coverage_tags: list[str] = []
+
+
+class SelectTestsRequest(BaseModel):
+    tests: list[QuantumTestCase]
+    time_budget: float
+    use_real_hardware: bool = False  # opt-in only -- see quantum_test_selection/README.md
+
+
+@app.post("/quantum/select-tests")
+async def quantum_select_tests(payload: SelectTestsRequest):
+    """
+    Selects the subset of the given tests to actually run under a CI time
+    budget, maximizing defect-detection coverage. Runs on Qiskit's local
+    Aer simulator by default -- real IBM Quantum hardware is a separate,
+    explicit opt-in (use_real_hardware=True) that needs your own saved
+    IBM Quantum account/token; see quantum_test_selection/README.md.
+    A quantum-derived selection is never returned without its
+    trust_evaluation attached, and low-trust results fall back to the
+    classical baseline automatically -- see quantum_test_selection/trust.py.
+
+    Imports are deferred to inside this function (not module top-level)
+    because qiskit's import chain is heavy -- the rest of this service
+    shouldn't pay that cost unless this endpoint is actually called,
+    matching the deferred-import pattern already used for
+    /models/registry above.
+    """
+    from quantum_test_selection.pipeline import select_tests_for_execution
+    from quantum_test_selection.reports import generate_selection_report
+
+    tests = [
+        {
+            "id": t.id,
+            "defect_rate": t.defect_rate,
+            "exec_time": t.exec_time,
+            "coverage_tags": set(t.coverage_tags),
+        }
+        for t in payload.tests
+    ]
+
+    try:
+        result = select_tests_for_execution(tests, payload.time_budget, use_real_hardware=payload.use_real_hardware)
+    except Exception as exc:
+        logger.exception("Quantum test selection failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {**result, "report": generate_selection_report(result, tests)}

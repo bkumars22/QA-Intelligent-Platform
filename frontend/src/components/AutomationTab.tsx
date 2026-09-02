@@ -8,6 +8,7 @@ import { automationApi } from '../services/automationApi';
 import type { FrameworkProfile, AutomationExecution, AutomationResult } from '../services/automationApi';
 import { isDemoMode } from '../services/api';
 import { FrameworkExplorer } from './FrameworkExplorer';
+import { QuantumSelectionPanel } from './QuantumSelectionPanel';
 
 // ─── Framework type cards ─────────────────────────────────────────────────────
 type FwType = 'PLAYWRIGHT' | 'SELENIUM';
@@ -549,6 +550,8 @@ export function AutomationTab({
           </div>
         </div>
       )}
+
+      <QuantumSelectionPanel />
 
       {!connectedProfile && !profilesLoading && executions.length === 0 && (
         <div className="text-center py-12 text-gray-400">
