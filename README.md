@@ -26,6 +26,17 @@ Built by: B KumaraSwamy — Bangalore, India
 | ARIA — Adaptive Learning AI | https://bkumars22.github.io/ARIA |
 | ZENTRAVIX — Org Intelligence | https://bkumars22.github.io/ZENTRAVIX |
 
+**A note on the live demo's AI features:** the Agentic RAG chat, Hybrid
+Search, and Quantum-Assisted Test Selection panels call the `ai-engine`
+Python service directly from your browser (`VITE_AI_ENGINE_URL`, no
+demo-mode mock) — the deployed GitHub Pages site doesn't currently run
+that service anywhere public, so those specific panels will show a
+"Failed to fetch" error there. Everything else on the live demo
+(dashboard, project browsing, Automation tab's framework connect/
+explorer/execution history, MCP config) works fully. To try the
+AI-engine features, run `ai-engine` locally (`uvicorn main:app`,
+`cd ai-engine`) alongside the frontend — see `ai-engine/quantum_test_selection/README.md`
+for the quantum selection feature specifically.
 
 ---
 
