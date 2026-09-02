@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>QA Intelligent Platform (AI-Driven)</title>
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages — https://github.com/rafgraph/spa-github-pages
+      //
+      // GitHub Pages has no server-side rewrites, so a direct hit (or a
+      // refresh) on a client-side route like /projects/1 has no real file
+      // to serve and 404s. GitHub Pages serves THIS file for any 404,
+      // though, so this redirects to the real index.html with the
+      // original path encoded in the query string; index.html's own
+      // inline script (see its <head>) decodes it back via
+      // history.replaceState before React Router mounts, so the app ends
+      // up on the right route with no visible flash/redirect.
+      //
+      // pathSegmentsToKeep = 0 because this site is served from a custom
+      // domain's root (qaip.chaitrishodaya.com/...), not a
+      // github.io/<repo-name>/ subpath -- see vite.config.ts's base: '/'.
+      var pathSegmentsToKeep = 0;
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>
